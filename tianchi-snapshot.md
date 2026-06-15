@@ -1,0 +1,564 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e6]:
+      - link [ref=e7] [cursor=pointer]:
+        - /url: https://www.aliyun.com/
+        - img [ref=e8]
+      - generic [ref=e12]:
+        - link [ref=e16] [cursor=pointer]:
+          - /url: https://www.aliyun.com/search?from=h5-global-nav-search
+          - img [ref=e17]:
+            - img [ref=e18]
+        - link "你好，我是AI助理，可以解答问题、推荐解决方案等" [ref=e22] [cursor=pointer]:
+          - /url: https://www.aliyun.com/ai-assistant?displayMode=side
+          - img [ref=e25]
+          - paragraph [ref=e539]: 你好，我是AI助理，可以解答问题、推荐解决方案等
+        - button "头像" [ref=e26] [cursor=pointer]:
+          - img "头像" [ref=e27]
+        - button "菜单" [ref=e28] [cursor=pointer]:
+          - img "菜单" [ref=e29]
+    - generic [ref=e31]:
+      - link "天池" [ref=e32] [cursor=pointer]:
+        - /url: https://tianchi.aliyun.com/
+      - generic [ref=e34]:
+        - generic [ref=e36] [cursor=pointer]:
+          - img [ref=e37]:
+            - img [ref=e38]
+          - generic [ref=e42]: 个人
+        - img [ref=e45] [cursor=pointer]:
+          - img [ref=e46]
+    - generic [ref=e52]:
+      - generic [ref=e53]:
+        - generic [ref=e54]:
+          - navigation [ref=e55]:
+            - list [ref=e56]:
+              - listitem [ref=e57]:
+                - link "首页" [ref=e58] [cursor=pointer]:
+                  - /url: /
+              - listitem [ref=e59]
+              - listitem [ref=e60]:
+                - link "天池大赛" [ref=e61] [cursor=pointer]:
+                  - /url: /competition
+              - listitem [ref=e62]
+              - listitem [ref=e63]:
+                - link "AI大模型赛" [ref=e64] [cursor=pointer]:
+                  - /url: /competition/aillmList
+              - listitem [ref=e65]
+              - listitem [ref=e66]: 大赛详情
+          - heading "AI大模型赛 AFAC2026挑战组-赛题四：金融长文本Agent 的动态记忆压缩与高效问答挑战" [level=1] [ref=e67]:
+            - generic [ref=e68]:
+              - img [ref=e69]:
+                - img [ref=e70]
+              - text: AI大模型赛
+            - text: AFAC2026挑战组-赛题四：金融长文本Agent 的动态记忆压缩与高效问答挑战
+        - generic [ref=e79]:
+          - generic [ref=e81]:
+            - paragraph [ref=e82]: 主办方
+            - generic [ref=e83]:
+              - paragraph [ref=e84]:
+                - text: 所属专题赛
+                - link "AFAC2026金融智能创新大赛 right" [ref=e85] [cursor=pointer]:
+                  - /url: https://afac.alipay.com/
+                  - text: AFAC2026金融智能创新大赛
+                  - img "right" [ref=e86]:
+                    - img [ref=e87]
+              - paragraph [ref=e89]:
+                - text: 标签
+                - generic [ref=e92]: "# ‌金融"
+                - generic [ref=e95]: "# 智能体"
+                - generic [ref=e98]: "# 蚂蚁集团竞赛"
+          - generic [ref=e99]:
+            - generic [ref=e100]:
+              - generic [ref=e101]:
+                - text: 奖金
+                - generic [ref=e102]: ¥ 1000000
+              - generic [ref=e104]:
+                - text: 团队数
+                - generic [ref=e105]: "154"
+            - generic [ref=e106]: 比赛时间：2026.06.06 ~ 2026.07.21
+            - generic [ref=e107]:
+              - button "立即报名" [ref=e108] [cursor=pointer]:
+                - generic [ref=e109]: 立即报名
+              - generic [ref=e110]: 报名剩 41 日 10 时
+      - generic [ref=e111]:
+        - generic [ref=e112]:
+          - text: 赛题与数据
+          - generic [ref=e114]: 本页目录
+        - generic [ref=e119]:
+          - generic [ref=e120]:
+            - heading "数据下载" [level=3] [ref=e121]
+            - list [ref=e123]:
+              - listitem [ref=e124]:
+                - paragraph [ref=e125]:
+                  - text: 数据文件名
+                  - generic [ref=e126]: (注册之后可以下载)
+                - paragraph [ref=e127]: 数据大小
+                - paragraph [ref=e128]: 操作
+                - paragraph [ref=e129]: ossutil命令
+              - listitem [ref=e130] [cursor=pointer]:
+                - paragraph [ref=e131]: p**************a.zip
+                - paragraph [ref=e132]: .(273MB)
+                - paragraph [ref=e133]: 下载
+                - paragraph [ref=e134]: 复制命令
+          - generic [ref=e137]:
+            - img [ref=e138]
+            - heading "一、任务介绍" [level=2] [ref=e139]
+            - paragraph [ref=e140]: 金融行业存在大量专业性强、篇幅长、结构复杂的文本资料，例如保险条款、监管法规、债券募集说明书、上市公司年报和行业研究报告。这类文档通常包含精确的期限、比例、例外条件、权利义务关系和跨章节引用，单纯依赖通用知识或关键词匹配难以稳定回答问题。
+            - paragraph [ref=e141]: 随着大语言模型和检索增强生成技术的发展，金融场景对模型的要求已经从“能否阅读单段文本”扩展到“能否在多份长文档之间定位证据、比较差异、完成计算和判断”。模型不仅需要准确检索相关片段，还需要理解金融语义、识别干扰项，并在答案格式上保持严格可评测。
+            - paragraph [ref=e142]: 然而，在实际应用中，金融长文本的篇幅往往远超模型上下文窗口的经济使用区间。直接将全文输入模型会导致 Token 消耗量巨大，推理成本难以控制；简单截断或朴素摘要又容易丢失关键事实、业务逻辑和约束条件，造成事实性错误或推理链断裂。
+            - paragraph [ref=e143]: 本赛题面向金融长文档问答任务，要求参赛者在不修改基座模型参数、仅通过Qwen系列模型 API 调用的前提下，设计 Agent 层面的记忆流转、动态压缩和上下文优化策略。赛题围绕五类典型金融文本构建评测集，考查系统在多文档阅读、事实核验、复杂推理、跨文本比较、答案规范化和 Token 成本控制方面的综合能力。
+            - heading "二、任务目标" [level=2] [ref=e144]
+            - paragraph [ref=e145]: 参赛者需要构建一个金融长文本 Agent，出题方提供金融长文本材料和配套问题集，参赛者需要设计并实现 Agent 的上下文管理、信息压缩、证据检索和问答策略，使系统在尽可能少的 Token 消耗下准确回答问题。
+            - paragraph [ref=e146]: 正式线上评测以answer.csv形式提交。参赛者需根据评测要求生成答案文件，并附带 Token 消耗统计。出题方负责提供评测文本和问题，参赛者需调用Qwen系列模型 API 完成推理，不得使用任何其他开源或闭源模型替代，参赛者仅限通过阿里云百炼平台或魔搭社区调用Qwen系列模型API完成推理。
+            - paragraph [ref=e147]: 题目类型包括：
+            - list [ref=e148]:
+              - listitem [ref=e149]:
+                - paragraph [ref=e150]: 单选题：从 A、B、C、D 中选择唯一正确答案。
+              - listitem [ref=e151]:
+                - paragraph [ref=e152]: 多选题：从 A、B、C、D 中选择所有正确答案。
+              - listitem [ref=e153]:
+                - paragraph [ref=e154]: 判断题：使用 A/B 表示正确或错误，具体含义以题目文件中的选项为准。
+            - paragraph [ref=e155]: 赛题重点考查以下能力：
+            - list [ref=e156]:
+              - listitem [ref=e157]:
+                - paragraph [ref=e158]: 金融长文档阅读理解：从 PDF 或清洗后的文本中读取有效信息。
+              - listitem [ref=e159]:
+                - paragraph [ref=e160]: 多文档检索与定位：根据题目自动找到相关文档和证据段落。
+              - listitem [ref=e161]:
+                - paragraph [ref=e162]: 跨文档比较分析：比较不同产品、法规、公司或报告中的条款与指标。
+              - listitem [ref=e163]:
+                - paragraph [ref=e164]: 数值计算与条件推理：处理比例、金额、期限、现金流、责任范围等信息。
+              - listitem [ref=e165]:
+                - paragraph [ref=e166]: 动态记忆压缩：在多轮读取和推理过程中保留关键事实，压缩冗余上下文。
+              - listitem [ref=e167]:
+                - paragraph [ref=e168]: Token 成本优化：减少无效全文输入、重复检索和冗余模型调用。
+              - listitem [ref=e169]:
+                - paragraph [ref=e170]: 抗干扰能力：在相近表述、细微条件变化和复杂选项中识别正确答案。
+            - paragraph [ref=e171]: 可采用的技术方向包括动态摘要抽取、Prompt Engineering、思维链提示、Agent 记忆管理、上下文窗口优化、检索增强生成（RAG）、结构化信息抽取和答案后处理等。
+            - heading "三、任务数据" [level=2] [ref=e172]
+            - heading "3.1 数据领域" [level=3] [ref=e173]
+            - paragraph [ref=e174]: 本数据集覆盖五个金融长文档领域：
+            - table [ref=e175]:
+              - rowgroup [ref=e176]:
+                - row "领域标识 领域名称 文档数量 A 榜题数 B 榜题数 主要考查点" [ref=e177]:
+                  - columnheader "领域标识" [ref=e178]:
+                    - strong [ref=e179]: 领域标识
+                  - columnheader "领域名称" [ref=e180]:
+                    - strong [ref=e181]: 领域名称
+                  - columnheader "文档数量" [ref=e182]:
+                    - strong [ref=e183]: 文档数量
+                  - columnheader "A 榜题数" [ref=e184]:
+                    - strong [ref=e185]: A 榜题数
+                  - columnheader "B 榜题数" [ref=e186]:
+                    - strong [ref=e187]: B 榜题数
+                  - columnheader "主要考查点" [ref=e188]:
+                    - strong [ref=e189]: 主要考查点
+              - rowgroup [ref=e190]:
+                - row "insurance 保险条款 16 20 20 保险责任、身故保险金、退保金额、领取规则、条款比较" [ref=e191]:
+                  - cell "insurance" [ref=e192]
+                  - cell "保险条款" [ref=e193]
+                  - cell "16" [ref=e194]
+                  - cell "20" [ref=e195]
+                  - cell "20" [ref=e196]
+                  - cell "保险责任、身故保险金、退保金额、领取规则、条款比较" [ref=e197]
+                - row "regulatory 监管法规 26 20 20 法规适用、合规义务、时限要求、监管处罚、条文优先级" [ref=e198]:
+                  - cell "regulatory" [ref=e199]
+                  - cell "监管法规" [ref=e200]
+                  - cell "26" [ref=e201]
+                  - cell "20" [ref=e202]
+                  - cell "20" [ref=e203]
+                  - cell "法规适用、合规义务、时限要求、监管处罚、条文优先级" [ref=e204]
+                - row "financial_contracts 金融合同 14 20 20 债券条款、发行信息、评级信息、权利义务关系" [ref=e205]:
+                  - cell "financial_contracts" [ref=e206]
+                  - cell "金融合同" [ref=e207]
+                  - cell "14" [ref=e208]
+                  - cell "20" [ref=e209]
+                  - cell "20" [ref=e210]
+                  - cell "债券条款、发行信息、评级信息、权利义务关系" [ref=e211]
+                - row "financial_reports 财务报表 10 20 20 年报指标、经营表现、现金流、研发投入、分红政策" [ref=e212]:
+                  - cell "financial_reports" [ref=e213]
+                  - cell "财务报表" [ref=e214]
+                  - cell "10" [ref=e215]
+                  - cell "20" [ref=e216]
+                  - cell "20" [ref=e217]
+                  - cell "年报指标、经营表现、现金流、研发投入、分红政策" [ref=e218]
+                - row "research 行业研报 20 20 20 行业趋势、公司比较、指标解读、研究结论核验" [ref=e219]:
+                  - cell "research" [ref=e220]
+                  - cell "行业研报" [ref=e221]
+                  - cell "20" [ref=e222]
+                  - cell "20" [ref=e223]
+                  - cell "20" [ref=e224]
+                  - cell "行业趋势、公司比较、指标解读、研究结论核验" [ref=e225]
+            - paragraph [ref=e226]: 全量基准题共 200 道，其中 A 榜 100 道，B 榜 100 道。
+            - heading "3.2 A/B 榜设置" [level=3] [ref=e227]
+            - paragraph [ref=e228]: A 榜题目提供相对明确的文档关联信息，适合用于开发、调试和验证模型的基础阅读能力。
+            - paragraph [ref=e229]: B 榜题目难度更高，题目文件不直接给出 doc_ids，要求系统先完成候选文档检索，再进行阅读理解和答案判断。B 榜更接近真实金融问答场景中的盲测设置。
+            - paragraph [ref=e230]: A榜测评结束后将启动B榜测评环节。参赛者须在A榜取得有效成绩，方可获得进入B榜测评的资格。
+            - list [ref=e231]:
+              - listitem [ref=e232]: A榜数据评测：2026年6月8日10:00-7月21日20:00
+              - listitem [ref=e233]: B榜数据评测：2026年7月22日0:00-7月24日17:00
+            - heading "3.3 题目格式" [level=3] [ref=e234]
+            - paragraph [ref=e235]: 问题文件中的单条样例如下：
+            - code [ref=e237]: "{ \"qid\": \"fin_a_001\", \"domain\": \"financial_reports\", \"split\": \"A\", \"question\": \"根据比亚迪连续两年的年度报告，下列关于公司经营业绩变化的描述中，哪些是准确的？\", \"options\": { \"A\": \"2025 年营业收入较 2024 年实现增长\", \"B\": \"2025 年归属于上市公司股东的净利润出现下滑\", \"C\": \"2025 年经营活动产生的现金流量净额优于 2024 年\", \"D\": \"2025 年研发投入占营业收入的比例较 2024 年有所下降\" }, \"answer_format\": \"multi\", \"type\": \"财务指标对比分析\", \"doc_ids\": [ \"byd_2024_annual\", \"byd_2025_annual\" ] }"
+            - paragraph [ref=e238]: 字段说明：
+            - table [ref=e239]:
+              - rowgroup [ref=e240]:
+                - row "字段 类型 说明" [ref=e241]:
+                  - columnheader "字段" [ref=e242]:
+                    - strong [ref=e243]: 字段
+                  - columnheader "类型" [ref=e244]:
+                    - strong [ref=e245]: 类型
+                  - columnheader "说明" [ref=e246]:
+                    - strong [ref=e247]: 说明
+              - rowgroup [ref=e248]:
+                - row "qid String 题目唯一编号" [ref=e249]:
+                  - cell "qid" [ref=e250]
+                  - cell "String" [ref=e251]
+                  - cell "题目唯一编号" [ref=e252]
+                - row "domain String 所属领域" [ref=e253]:
+                  - cell "domain" [ref=e254]
+                  - cell "String" [ref=e255]
+                  - cell "所属领域" [ref=e256]
+                - row "split String 所属组别，取值为 A 或 B" [ref=e257]:
+                  - cell "split" [ref=e258]
+                  - cell "String" [ref=e259]
+                  - cell "所属组别，取值为 A 或 B" [ref=e260]
+                - row "question String 题干" [ref=e261]:
+                  - cell "question" [ref=e262]
+                  - cell "String" [ref=e263]
+                  - cell "题干" [ref=e264]
+                - row "options Object A/B/C/D 四个候选选项" [ref=e265]:
+                  - cell "options" [ref=e266]
+                  - cell "Object" [ref=e267]
+                  - cell "A/B/C/D 四个候选选项" [ref=e268]
+                - row "answer_format String 题型，包含 mcq、multi、tf" [ref=e269]:
+                  - cell "answer_format" [ref=e270]
+                  - cell "String" [ref=e271]
+                  - cell "题型，包含 mcq、multi、tf" [ref=e272]
+                - row "type String 题目能力标签或业务类型" [ref=e273]:
+                  - cell "type" [ref=e274]
+                  - cell "String" [ref=e275]
+                  - cell "题目能力标签或业务类型" [ref=e276]
+                - row "doc_ids Array[String] 参考文档编号，A 组提供，B 组不提供" [ref=e277]:
+                  - cell "doc_ids" [ref=e278]
+                  - cell "Array[String]" [ref=e279]
+                  - cell "参考文档编号，A 组提供，B 组不提供" [ref=e280]
+            - heading "3.4 文档元数据" [level=3] [ref=e281]
+            - paragraph [ref=e282]: 每条文档元数据包含 doc_id、path、title 等字段。系统应根据 doc_id 找到对应原始 PDF，再用于题目作答。
+            - paragraph [ref=e283]: 评测长文本来源包括公开金融监管法规、公司合规指南、财务报告、保险条款与产品说明书、金融合同、法律文档和行业研究报告等材料。文本经过整理和审阅后用于评测，并刻意保留较长篇幅和分散关键信息点，以考查 Agent 的压缩、检索和跨段推理能力。
+            - heading "四、提交格式" [level=2] [ref=e284]
+            - paragraph [ref=e285]: 线上评测answer.csv 应同时包含每道题答案和本次评测的 Token 消耗统计。
+            - paragraph [ref=e286]: 示例：
+            - table [ref=e287]:
+              - rowgroup [ref=e288]:
+                - row "qid answer prompt_tokens completion_tokens total_tokens" [ref=e289]:
+                  - columnheader "qid" [ref=e290]
+                  - columnheader "answer" [ref=e291]
+                  - columnheader "prompt_tokens" [ref=e292]
+                  - columnheader "completion_tokens" [ref=e293]
+                  - columnheader "total_tokens" [ref=e294]
+              - rowgroup [ref=e295]:
+                - row "summary 3627557 629 3628186" [ref=e296]:
+                  - cell "summary" [ref=e297]
+                  - cell [ref=e298]
+                  - cell "3627557" [ref=e299]
+                  - cell "629" [ref=e300]
+                  - cell "3628186" [ref=e301]
+                - row "ins_a_001 B 37201 1 37202" [ref=e302]:
+                  - cell "ins_a_001" [ref=e303]
+                  - cell "B" [ref=e304]
+                  - cell "37201" [ref=e305]
+                  - cell "1" [ref=e306]
+                  - cell "37202" [ref=e307]
+                - row "ins_a_002 A 33063 1 33064" [ref=e308]:
+                  - cell "ins_a_002" [ref=e309]
+                  - cell "A" [ref=e310]
+                  - cell "33063" [ref=e311]
+                  - cell "1" [ref=e312]
+                  - cell "33064" [ref=e313]
+            - paragraph [ref=e314]: 字段说明：
+            - table [ref=e315]:
+              - rowgroup [ref=e316]:
+                - row "字段 类型 说明" [ref=e317]:
+                  - columnheader "字段" [ref=e318]:
+                    - strong [ref=e319]: 字段
+                  - columnheader "类型" [ref=e320]:
+                    - strong [ref=e321]: 类型
+                  - columnheader "说明" [ref=e322]:
+                    - strong [ref=e323]: 说明
+              - rowgroup [ref=e324]:
+                - row "answers Object 题目编号到答案字符串的映射" [ref=e325]:
+                  - cell "answers" [ref=e326]
+                  - cell "Object" [ref=e327]
+                  - cell "题目编号到答案字符串的映射" [ref=e328]
+                - row "prompt_tokens Number 回答全部评测问题过程中消耗的输入 Token 数" [ref=e329]:
+                  - cell "prompt_tokens" [ref=e330]
+                  - cell "Number" [ref=e331]
+                  - cell "回答全部评测问题过程中消耗的输入 Token 数" [ref=e332]
+                - row "completion_tokens Number 回答全部评测问题过程中消耗的输出 Token 数" [ref=e333]:
+                  - cell "completion_tokens" [ref=e334]
+                  - cell "Number" [ref=e335]
+                  - cell "回答全部评测问题过程中消耗的输出 Token 数" [ref=e336]
+                - row "total_tokens Number completion_tokens与prompt_tokens之和" [ref=e337]:
+                  - cell "total_tokens" [ref=e338]
+                  - cell "Number" [ref=e339]
+                  - cell "completion_tokens与prompt_tokens之和" [ref=e340]
+            - paragraph [ref=e341]: 答案格式要求：
+            - list [ref=e342]:
+              - listitem [ref=e343]:
+                - paragraph [ref=e344]: 单选题：提交一个大写字母，例如 A。
+              - listitem [ref=e345]:
+                - paragraph [ref=e346]: 判断题：提交一个大写字母，例如 A 或 B。
+              - listitem [ref=e347]:
+                - paragraph [ref=e348]: 多选题：提交多个大写字母，按字母顺序排列，不使用空格、逗号或其他分隔符，例如 ABC。
+              - listitem [ref=e349]:
+                - paragraph [ref=e350]: 若答案为空、包含非法字符、顺序不规范或与标准答案不完全一致，则该题计为错误。
+            - paragraph [ref=e351]: ⚠️请注意：本赛题禁止在任何场景下使用embedding模型；文档离线解析阶段的Token 消耗不计入最终 Token 消耗，参赛者可使用 Python PDF 解析库或自行编写脚本对文档进行预处理、文本抽取与结构化解析，文档解析脚本需在提交报告阶段一同提交。
+            - heading "五、评测指标" [level=2] [ref=e352]
+            - paragraph [ref=e353]: 本赛题采用“准确率为主、Token 效率为辅”的实时综合评分方式。系统首先根据参赛者提交的 answer.csv 与标准答案逐题比对，计算准确率 Accuracy = Correct / Total。参赛者需在提交文件中提供本次作答过程的 Token 消耗统计，即 summary.total_tokens。
+            - paragraph [ref=e354]: 为保证线上评测能够实时出分，采用固定预算归一化方式计算。设 TokenBudget = 5,000,000，TotalTokens 为参赛者提交的总 Token 消耗，则：
+            - paragraph [ref=e355]: TokenScore = max(0, min(1, (TokenBudget - TotalTokens) / TokenBudget))
+            - paragraph [ref=e356]: FinalScore = 100 * Accuracy * (0.7 + 0.3 * TokenScore)
+            - paragraph [ref=e357]: 其中，准确率决定主体得分，Token 效率最多影响 30% 的加权系数。若参赛者未提交有效 Token 统计或 TotalTokens <= 0，则 TokenScore 记为 0。最终分数不低于 0。
+            - paragraph [ref=e358]: 若综合得分相同，依次按以下规则排序：
+            - list [ref=e359]:
+              - listitem [ref=e360]:
+                - paragraph [ref=e361]: 准确率更高者排名靠前。
+              - listitem [ref=e362]:
+                - paragraph [ref=e363]: 若准确率仍相同，TotalTokens 更低者排名靠前。
+              - listitem [ref=e364]:
+                - paragraph [ref=e365]: 若仍相同，提交时间更早者排名靠前。
+            - paragraph [ref=e366]: 评测时会对答案字母进行标准化处理，核心规则如下：
+            - list [ref=e367]:
+              - listitem [ref=e368]:
+                - paragraph [ref=e369]: 单选题和判断题以首个有效答案字母为准。
+              - listitem [ref=e370]:
+                - paragraph [ref=e371]: 多选题会将答案字母去重并排序后，与标准答案做完全匹配。
+              - listitem [ref=e372]:
+                - paragraph [ref=e373]: 多选题不设置部分分，漏选、错选、多选均计为错误。
+              - listitem [ref=e374]:
+                - paragraph [ref=e375]: Token 统计覆盖回答评测问题全过程中的所有模型 API 调用，包括检索摘要、上下文压缩、证据判断、答案生成和自检等步骤。
+            - paragraph [ref=e376]: 平台可按领域、组别、准确率和 Token 消耗统计分项表现，用于分析系统在不同金融文本类型上的能力差异和成本收益表现。
+            - paragraph [ref=e377]: 特别注意：本次评测基准模型采用Qwen3.6-plus模型。
+            - heading "代码审核" [level=4] [ref=e378]
+            - paragraph [ref=e379]:
+              - text: B 榜成绩排名前 15 名的参赛者需提交完整的代码和复现文档，包括但不限于以下内容：
+              - text: submission.zip
+              - text: ├── answer.csv
+              - text: ├── evidence.json
+              - text: "├── processed_data/ # 清洗、切分、结构化后的长文本数据"
+              - text: "├── agent/ # Agent 系统完整代码"
+              - text: "├── script/ # 可复现运行脚本，包括数据处理、索引构建、检索、记忆压缩、Agent推理及结果生成"
+              - text: "├── logs/ # 实验记录"
+              - text: ├── requirements.txt
+              - text: └── README.md
+              - text: 参赛者提交的内容应支持按照说明文档一键运行，并生成符合要求的结果文件。提交的代码压缩包总大小不超过1GB。
+            - heading "六、Baseline 参考" [level=2] [ref=e380]
+            - paragraph [ref=e381]: 基于 Qwen-plus 的基线评测结果：
+            - table [ref=e382]:
+              - rowgroup [ref=e383]:
+                - row "组别 正确/样本 准确率 Token 消耗" [ref=e384]:
+                  - columnheader "组别" [ref=e385]:
+                    - strong [ref=e386]: 组别
+                  - columnheader "正确/样本" [ref=e387]:
+                    - strong [ref=e388]: 正确/样本
+                  - columnheader "准确率" [ref=e389]:
+                    - strong [ref=e390]: 准确率
+                  - columnheader "Token 消耗" [ref=e391]:
+                    - strong [ref=e392]: Token 消耗
+              - rowgroup [ref=e393]:
+                - row "A 组 17/100 17.0% 3,628,186" [ref=e394]:
+                  - cell "A 组" [ref=e395]
+                  - cell "17/100" [ref=e396]
+                  - cell "17.0%" [ref=e397]
+                  - cell "3,628,186" [ref=e398]
+                - row "B 组 13/100 13.0% 3,884,045" [ref=e399]:
+                  - cell "B 组" [ref=e400]
+                  - cell "13/100" [ref=e401]
+                  - cell "13.0%" [ref=e402]
+                  - cell "3,884,045" [ref=e403]
+                - row "总计 30/200 15.0% 7,512,231" [ref=e404]:
+                  - cell "总计" [ref=e405]
+                  - cell "30/200" [ref=e406]
+                  - cell "15.0%" [ref=e407]
+                  - cell "7,512,231" [ref=e408]
+            - paragraph [ref=e409]: 该结果说明，仅将长文档直接输入通用模型并不能稳定解决任务。参赛者可重点优化以下方向：
+            - list [ref=e410]:
+              - listitem [ref=e411]:
+                - paragraph [ref=e412]: 文档解析质量：提升 PDF 文本抽取、表格处理和版面结构还原能力。
+              - listitem [ref=e413]:
+                - paragraph [ref=e414]: 检索策略：构建面向金融术语、条款编号和指标名称的混合检索。
+              - listitem [ref=e415]:
+                - paragraph [ref=e416]: 证据聚合：支持同题多文档、多段落证据的联合判断。
+              - listitem [ref=e417]:
+                - paragraph [ref=e418]: 答案约束：对模型输出进行字母抽取、排序、去重和合法性检查。
+              - listitem [ref=e419]:
+                - paragraph [ref=e420]: 领域知识增强：针对保险、监管、合同、财报、研报分别设计提示词和后处理规则。
+            - heading "七、样例任务" [level=2] [ref=e421]
+            - paragraph [ref=e422]: 以监管法规领域为例，题目给出一个金融机构客户尽职调查或受益所有人识别的具体业务场景，要求系统结合法规施行日期、识别义务、报告时限和管控措施判断多个选项是否合规。此类题目要求模型严格依据法规条文作答，不能用常识替代证据。本部分将在下方以真实题目 reg_a_014 为例，详细展示监管法规领域的典型案例及证据可追溯性规范。
+            - paragraph [ref=e423]: 以保险条款领域为例，题目可能给定多款产品的已交保费、现金价值、账户价值、领取状态等条件，要求比较各产品身故保险金或退保金额。系统需要同时理解条款触发条件和计算公式。
+            - paragraph [ref=e424]: 本赛题的监管法规领域（regulatory）题目要求模型严格基于给定的法律法规文本进行多选项的合规性判断和法条追溯。以下给出一个典型的多选题案例及解析过程，用于阐明问题定义、证据定位和答案生成逻辑，同时说明系统在输出时需满足的证据可追溯性要求。
+            - heading "1. 题目信息" [level=4] [ref=e425]
+            - paragraph [ref=e426]: 题目ID：reg_a_014
+            - paragraph [ref=e427]: 领域标签：regulatory（监管法规）
+            - paragraph [ref=e428]: 题型：多选题（multi）
+            - paragraph [ref=e429]: 关联文档ID：strict_csrc_023（《上市公司治理准则》）、strict_csrc_035（《上市公司章程指引》）
+            - paragraph [ref=e430]: 题干：
+            - paragraph [ref=e431]: 某A股上市公司（非金融类，总股本5亿股，最近一期经审计净资产120亿元）拟进行如下四项决策：
+            - paragraph [ref=e432]: ① 为资产负债率为75%的全资子公司提供8亿元担保；
+            - paragraph [ref=e433]: ② 将原募投项目“智能工厂建设”剩余募集资金6.5亿元变更为“新能源材料研发中心”；
+            - paragraph [ref=e434]: ③ 选举新一届独立董事，其中1名候选人系某律所合伙人，其所在律所过去12个月内曾为公司提供常年法律顾问服务但未承办重大诉讼；
+            - paragraph [ref=e435]: ④ 审议《关于修订公司章程第42条股东大会特别决议事项的议案》，拟将“对外提供财务资助”纳入须经特别决议的范围（原章程未列明）。
+            - paragraph [ref=e436]: 根据《上市公司治理准则》《上市公司章程指引（2023年修订）》及相关证券监管规定，下列关于上述事项是否必须经股东大会审议及表决方式的判断，正确的有？
+            - paragraph [ref=e437]: 选项：
+            - paragraph [ref=e438]: A. 事项①中，因被担保方资产负债率超过70%，且担保金额占公司最近一期经审计净资产比例达6.67%，两项任一条件触发即须经股东大会审议通过，故该项担保必须提交股东大会审议。
+            - paragraph [ref=e439]: B. 事项②中，变更募集资金用途涉及金额6.5亿元，虽未达净资产10%（12亿元），但因变更投向属于“主营业务方向重大调整”，根据《章程指引》第44条及《治理准则》第19条，仍须经股东大会特别决议通过。
+            - paragraph [ref=e440]: C. 事项③中，该独立董事候选人存在《治理准则》规定的“最近12个月内为上市公司提供过法律服务”的情形，构成独立性障碍，不得提名为独立董事候选人，故股东大会不得对其行使选举权。
+            - paragraph [ref=e441]: D. 事项④中，公司章程自主增设特别决议事项不违反《章程指引》第77条“上市公司可在本指引基础上增加特别决议事项”的授权性规定，但须经股东大会普通决议通过即可生效，无需特别决议。
+            - paragraph [ref=e442]: 标准答案：AC
+            - heading "2. 法规证据定位" [level=4] [ref=e443]
+            - paragraph [ref=e444]: 系统在作答此题时，应当在检索阶段定位到以下具体法条作为判断依据：
+            - paragraph [ref=e445]: 证据一（对应事项①及选项A）：
+            - paragraph [ref=e446]: 引用文件：strict_csrc_035（《上市公司章程指引》）第四十七条。
+            - paragraph [ref=e447]: 法条原文：“第四十七条 公司下列对外担保行为，须经股东会审议通过：... （四）为资产负债率超过百分之七十的担保对象提供的担保；...”
+            - paragraph [ref=e448]: 证据二（对应事项②及选项B）：
+            - paragraph [ref=e449]: 引用文件：strict_csrc_035（《上市公司章引》）第八十一条及第八十二条。
+            - paragraph [ref=e450]: 法条原文：第八十一条规定了由股东会以普通决议通过的事项，包括“（四）除法律、行政法规规定或者本章程规定应当以特别决议通过以外的其他事项”；第八十二条详细列举了须经特别决议通过的事事项，而“变更募集资金用途”未列入特别决议事项。
+            - paragraph [ref=e451]: 证据三（对应事项③及选项C）：
+            - paragraph [ref=e452]: 引用文件：strict_csrc_023（《上市公司治理准则》）第四十一条。
+            - paragraph [ref=e453]: 法条原文：“第四十一条 独立董事的任职条件、选举更换程序等，应当符合有关规定。独立董事不得与其所受聘上市公司及其主要股东、实际控制人存在直接或者间接利害关系，或者其他可能影响其进行独立客观判断的关系。”
+            - paragraph [ref=e454]: 证据四（对应事项④及选项D）：
+            - paragraph [ref=e455]: 引用文件：strict_csrc_035（《上市公司章程指引》）第八十二条。
+            - paragraph [ref=e456]: 法条原文：“第八十二条 下列事项由股东会以特别决议通过：... （三）本章程的修改；...”
+            - heading "3. 答案逻辑推理过程" [level=4] [ref=e457]
+            - paragraph [ref=e458]: 事项①分析：被担保对象为资产负债率75%的子公司，已超过“百分之七十”的法定界限。依据《章程指引》第四十七条第（四）款，该事项属于必须经股东会审议的范围，因此选项A正确。
+            - paragraph [ref=e459]: 事项②分析：变更募集资金用途属于股东会审议事项，但根据《章程指引》第八十一条及第八十二条，该项决议未被列为必须经特别决议通过的事项。根据第八十一条第（四）款，其属于应以普通决议（出席股东会表决权过半数）通过的事项。选项B声称“必须特别决议通过”，因此选项B错误。
+            - paragraph [ref=e460]:
+              - text: 题目ID：reg_a_014
+              - text: 领域标签：regulatory（监管法规）
+              - text: 题型：多选题（multi）
+              - text: 关联文档ID：strict_csrc_023（《上市公司治理准则》）、strict_csrc_035（《上市公司章程指引》）
+            - paragraph [ref=e461]:
+              - text: 题干：
+              - text: 某A股上市公司（非金融类，总股本5亿股，最近一期经审计净资产120亿元）拟进行如下四项决策：
+              - text: ① 为资产负债率为75%的全资子公司提供8亿元担保；
+              - text: ② 将原募投项目“智能工厂建设”剩余募集资金6.5亿元变更为“新能源材料研发中心”；
+              - text: ③ 选举新一届独立董事，其中1名候选人系某律所合伙人，其所在律所过去12个月内曾为公司提供常年法律顾问服务但未承办重大诉讼；
+              - text: ④ 审议《关于修订公司章程第42条股东大会特别决议事项的议案》，拟将“对外提供财务资助”纳入须经特别决议的范围（原章程未列明）。
+            - paragraph [ref=e462]: 根据《上市公司治理准则》《上市公司章程指引（2023年修订）》及相关证券监管规定，下列关于上述事项是否必须经股东大会审议及表决方式的判断，正确的有？
+            - paragraph [ref=e463]:
+              - text: 选项：
+              - text: A. 事项①中，因被担保方资产负债率超过70%，且担保金额占公司最近一期经审计净资产比例达6.67%，两项任一条件触发即须经股东大会审议通过，故该项担保必须提交股东大会审议。
+              - text: B. 事项②中，变更募集资金用途涉及金额6.5亿元，虽未达净资产10%（12亿元），但因变更投向属于“主营业务方向重大调整”，根据《章程指引》第44条及《治理准则》第19条，仍须经股东大会特别决议通过。
+              - text: C. 事项③中，该独立董事候选人存在《治理准则》规定的“最近12个月内为上市公司提供过法律服务”的情形，构成独立性障碍，不得提名为独立董事候选人，故股东大会不得对其行使选举权。
+              - text: D. 事项④中，公司章程自主增设特别决议事项不违反《章程指引》第77条“上市公司可在本指引基础上增加特别决议事项”的授权性规定，但须经股东大会普通决议通过即可生效，无需特别决议。
+            - paragraph [ref=e464]: 标准答案：AC
+            - heading "_2. _法规证据定位" [level=4] [ref=e465]:
+              - text: _2. _
+              - emphasis [ref=e466]: 法规证据定位
+            - paragraph [ref=e467]: 系统在作答此题时，应当在检索阶段定位到以下具体法条作为判断依据：
+            - paragraph [ref=e468]:
+              - text: 证据一（对应事项①及选项A）：
+              - text: 引用文件：strict_csrc_035（《上市公司章程指引》）第四十七条。
+              - text: 法条原文：“第四十七条 公司下列对外担保行为，须经股东会审议通过：... （四）为资产负债率超过百分之七十的担保对象提供的担保；...”
+            - paragraph [ref=e469]:
+              - text: 证据二（对应事项②及选项B）：
+              - text: 引用文件：strict_csrc_035（《上市公司章引》）第八十一条及第八十二条。
+              - text: 法条原文：第八十一条规定了由股东会以普通决议通过的事项，包括“（四）除法律、行政法规规定或者本章程规定应当以特别决议通过以外的其他事项”；第八十二条详细列举了须经特别决议通过的事事项，而“变更募集资金用途”未列入特别决议事项。
+            - paragraph [ref=e470]:
+              - text: 证据三（对应事项③及选项C）：
+              - text: 引用文件：strict_csrc_023（《上市公司治理准则》）第四十一条。
+              - text: 法条原文：“第四十一条 独立董事的任职条件、选举更换程序等，应当符合有关规定。独立董事不得与其所受聘上市公司及其主要股东、实际控制人存在直接或者间接利害关系，或者其他可能影响其进行独立客观判断的关系。”
+            - paragraph [ref=e471]:
+              - text: 证据四（对应事项④及选项D）：
+              - text: 引用文件：strict_csrc_035（《上市公司章程指引》）第八十二条。
+              - text: 法条原文：“第八十二条 下列事项由股东会以特别决议通过：... （三）本章程的修改；...”
+            - heading "_3. _答案逻辑推理过程" [level=4] [ref=e472]:
+              - text: _3. _
+              - emphasis [ref=e473]: 答案逻辑推理过程
+            - paragraph [ref=e474]: 事项①分析：被担保对象为资产负债率75%的子公司，已超过“百分之七十”的法定界限。依据《章程指引》第四十七条第（四）款，该事项属于必须经股东会审议的范围，因此选项A正确。
+            - paragraph [ref=e475]: 事项②分析：变更募集资金用途属于股东会审议事项，但根据《章程指引》第八十一条及第八十二条，该项决议未被列为必须经特别决议通过的事项。根据第八十一条第（四）款，其属于应以普通决议（出席股东会表决权过半数）通过的事项。选项B声称“必须特别决议通过”，因此选项B错误。
+            - paragraph [ref=e476]: 事项③分析：候选人所在律所在过去12个月内为上市公司提供过常年法律顾问服务。依据《治理准则》第四十一条，该候选人与上市公司存在利害关系，影响其独立客观判断，构成独立董事独立性缺陷，不能提名为候选人。因此选项C正确。
+            - paragraph [ref=e477]: 事项④分析：将“对外提供财务资助”纳入特别决议范围，其实质是对公司章程中关于股东会决策程序条款的修改。依据《章程指引》第八十二条第（三）款，“本章程的修改”必须经股东会特别决议（出席股东表决权2/3以上）通过方可生效。选项D声称“经普通决议通过即可生效”，与此规定抵触，因此选项D错误。
+            - paragraph [ref=e478]: 综合上述推理，正确答案为AC。
+            - heading "_4. _证据可追溯性输出规范" [level=4] [ref=e479]:
+              - text: _4. _
+              - emphasis [ref=e480]: 证据可追溯性输出规范
+            - paragraph [ref=e481]: 为了保证回答的真实性和可审核性，系统除返回标准答案外，还应当在输出结构中附带证据定位元数据。其格式规范示例如下：
+            - code [ref=e483]: "{ \"qid\": \"reg_a_014\", \"answer\": \"AC\", \"evidence_retrieval\": [ { \"doc_id\": \"strict_csrc_035\", \"quoted_clause\": \"第四十七条 公司下列对外担保行为，须经股东会审议通过：... （四）为资产负债率超过百分之七十的担保对象提供的担保；\", \"reasoning\": \"全资子公司的资产负债率为75%，超过70%限额，根据第四十七条第四款规定，此担保必须由股东会审议通过。支持选项A。\" }, { \"doc_id\": \"strict_csrc_023\", \"quoted_clause\": \"第四十一条 ...独立董事不得与其所受聘上市公司...存在直接或者间接利害关系...\", \"reasoning\": \"独立董事候选人所在律所过去12个月内曾为公司提供法律顾问服务，构成独立性受限情形。支持选项C。\" }, { \"doc_id\": \"strict_csrc_035\", \"quoted_clause\": \"第八十二条 下列事项由股东会以特别决议通过：... （三）本章程的修改；\", \"reasoning\": \"将对外财务资助纳入特别决议范围属于修改章程行为，必须经出席会议的股东所持表决权的三分之二以上（特别决议）通过。选项D判断不正确。\" } ] }"
+            - heading "八、推荐解题流程" [level=2] [ref=e484]
+            - paragraph [ref=e485]: 一个较稳健的系统可以采用以下流程：
+            - list [ref=e486]:
+              - listitem [ref=e487]:
+                - paragraph [ref=e488]: 文档预处理：抽取 PDF 文本，保留标题、页码、章节、表格和条款编号。
+              - listitem [ref=e489]:
+                - paragraph [ref=e490]: 文档索引：按领域构建向量索引、关键词索引和结构化字段索引。
+              - listitem [ref=e491]:
+                - paragraph [ref=e492]: 题目解析：识别题型、关键词、实体、时间、金额、指标和候选文档。
+              - listitem [ref=e493]:
+                - paragraph [ref=e494]: 证据检索：根据题目和选项分别检索证据，必要时进行多轮查询。
+              - listitem [ref=e495]:
+                - paragraph [ref=e496]: 推理作答：让模型基于证据逐项判断选项真假。
+              - listitem [ref=e497]:
+                - paragraph [ref=e498]: 答案校验：根据题型约束输出合法答案字母。
+              - listitem [ref=e499]:
+                - paragraph [ref=e500]: 结果汇总：生成符合提交格式的 csv或json文件。
+            - heading "入围规则" [level=2] [ref=e501]
+            - paragraph [ref=e502]: 1.B榜成绩排名前15名，并由组委会通知进入报告提交的队伍，需按规定提交指定材料。
+            - paragraph [ref=e503]: 2.未按时提交或者审查过程中发现有违反比赛规则的队伍将被取消评审和获奖资格。如有队伍被取消评审和获奖资格，将根据天池平台榜单成绩排名递补。
+            - heading "九、注意事项" [level=2] [ref=e504]
+            - paragraph [ref=e505]: 1.参赛者在分析数据和构建模型时，需遵循国家法律法规、行业规定和道德规范，不得侵犯他人知识产权、隐私权等权益；
+            - paragraph [ref=e506]: 2.参赛者在比赛过程中，建议与其他参赛者积极互动，分享经验和心得，共同提高参赛水平；
+            - paragraph [ref=e507]: 3.参赛者在比赛结束后，需同意将优秀作品和解决方案分享给其他参赛者，以便于大家共同学习和进步；
+            - paragraph [ref=e508]: 4.参赛者须严格遵守比赛规则与公平竞赛原则，严禁以任何形式弄虚作假或作弊。一经查实存在违规行为，大赛组委会有权立即取消其参赛资格及成绩，并全额追回已发放的奖金及相关奖励；
+            - paragraph [ref=e509]: 5.组织者保留对本次比赛的最终解释权。
+            - paragraph [ref=e510]: 6.参赛选手请添加官方赛题答疑群，请钉钉扫描二维码加入（或搜索钉钉群号：174890011923）
+            - img [ref=e540]
+    - contentinfo "移动端页尾" [ref=e512]:
+      - generic [ref=e513]:
+        - generic [ref=e516]:
+          - generic [ref=e517]: 关注我们：
+          - link "新浪微博" [ref=e518] [cursor=pointer]:
+            - /url: https://weibo.com/u/1644971875
+            - text: 新浪微博
+        - link "联系我们" [ref=e520] [cursor=pointer]:
+          - /url: https://www.aliyun.com/contact
+        - generic [ref=e521]:
+          - link "文档" [ref=e522] [cursor=pointer]:
+            - /url: https://help.aliyun.com/
+          - text: "|"
+          - link "开发者社区" [ref=e523] [cursor=pointer]:
+            - /url: https://developer.aliyun.com/
+          - text: "|"
+          - link "天池大赛" [ref=e524] [cursor=pointer]:
+            - /url: https://tianchi.aliyun.com/
+          - text: "|"
+          - link "培训与认证" [ref=e525] [cursor=pointer]:
+            - /url: https://edu.aliyun.com/
+        - img "阿里云" [ref=e526]
+        - generic [ref=e527]:
+          - link "法律声明及隐私权政策" [ref=e528] [cursor=pointer]:
+            - /url: http://terms.aliyun.com/legal-agreement/terms/suit_bu1_ali_cloud/suit_bu1_ali_cloud201902141711_54837.html
+          - text: "|"
+          - link "Cookies政策" [ref=e529] [cursor=pointer]:
+            - /url: https://terms.alicdn.com/legal-agreement/terms/platform_service/20220906101446934/20220906101446934.html
+        - generic [ref=e530]:
+          - text: © 2009-现在 Aliyun.com 版权所有
+          - text: 增值电信业务经营许可证：
+          - link "浙B2-20080101" [ref=e531] [cursor=pointer]:
+            - /url: http://beian.miit.gov.cn/
+          - text: 域名注册服务机构许可：
+          - link "浙D3-20210002" [ref=e532] [cursor=pointer]:
+            - /url: "https://domain.miit.gov.cn/域名注册服务机构/互联网域名/阿里云计算有限公司 "
+        - generic [ref=e533]:
+          - link [ref=e534] [cursor=pointer]:
+            - /url: https://zzlz.gsxt.gov.cn/businessCheck/verifKey.do?showType=p&serial=91330106673959654P-SAIC_SHOW_10000091330106673959654P1710919400712&signData=MEUCIQDEkCd8cK7/yqe6BNMWvoMPtAnsgKa7FZetfPkjZMsvhAIgOX1G9YC6FKyndE7o7hL0KaBVn4f+V/iof3iAgpsV09o=
+            - img [ref=e535]
+          - link "浙公网安备 33010602009975号" [ref=e536] [cursor=pointer]:
+            - /url: http://www.beian.gov.cn/portal/registerSystemInfo
+            - img [ref=e537]
+            - text: 浙公网安备 33010602009975号
+          - link "浙B2-20080101-4" [ref=e538] [cursor=pointer]:
+            - /url: https://beian.miit.gov.cn/
+  - iframe [ref=e541]:
+    
