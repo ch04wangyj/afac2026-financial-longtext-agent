@@ -61,8 +61,6 @@ class Settings:
     qwen_model: str = "qwen3.7-plus"
     qwen_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     qwen_enable_thinking: bool = True
-    qwen_stream: bool = True
-    qwen_stream_include_usage: bool = True
     max_evidence_chars: int = 6000
     top_k_retrieval: int = 30
     top_k_evidence: int = 8
@@ -90,8 +88,6 @@ class Settings:
             qwen_model=_setting("AFAC_QWEN_MODEL", cls.qwen_model),
             qwen_base_url=_setting("AFAC_QWEN_BASE_URL", cls.qwen_base_url),
             qwen_enable_thinking=_env_bool("AFAC_QWEN_ENABLE_THINKING", cls.qwen_enable_thinking),
-            qwen_stream=_env_bool("AFAC_QWEN_STREAM", cls.qwen_stream),
-            qwen_stream_include_usage=_env_bool("AFAC_QWEN_STREAM_INCLUDE_USAGE", cls.qwen_stream_include_usage),
             max_evidence_chars=int(_setting("AFAC_MAX_EVIDENCE_CHARS", str(cls.max_evidence_chars))),
             top_k_retrieval=int(_setting("AFAC_TOP_K_RETRIEVAL", str(cls.top_k_retrieval))),
             top_k_evidence=int(_setting("AFAC_TOP_K_EVIDENCE", str(cls.top_k_evidence))),
