@@ -50,6 +50,7 @@ def main() -> None:
         doc_index=doc_index,
         top_k_per_query=settings.top_k_retrieval,
         fused_top_k=settings.top_k_retrieval,
+        strategy=settings.retrieval_strategy,
         blind_top_docs=settings.blind_top_docs,
     )
     compressor = RuleEvidenceCompressor(max_chars=settings.max_evidence_chars, top_k=settings.top_k_evidence)

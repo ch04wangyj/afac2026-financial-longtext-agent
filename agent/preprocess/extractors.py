@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from agent.preprocess.normalization import normalize_text
@@ -14,11 +14,15 @@ from agent.preprocess.normalization import normalize_text
 
 @dataclass
 class PageText:
-    """单页解析结果，tables 字段为表格文本的轻量保留。"""
+    """单页解析结果，保留表格、图片和解析来源等轻量结构信息。"""
 
     page: int | None
     text: str
-    tables: list[str]
+    tables: list[dict | str]
+    figures: list[dict] = field(default_factory=list)
+    parser_name: str = ""
+    ocr_used: bool = False
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 def extract_pages(path: Path, domain: str = "") -> list[PageText]:
@@ -60,18 +64,45 @@ def _read_html(path: Path) -> str:
         return normalize_text(text)
 
 
+def choose_pdf_parser(domain: str) -> str:
+    """所有 PDF 默认优先走 Docling，具体领域规则后续在更高层扩展。"""
+    _ = domain
+    return "docling"
+
+
+
 def _read_pdf(path: Path, domain: str) -> list[PageText]:
-    """PDF 先走 PyMuPDF，失败时用 pdfplumber 兜底。"""
-    try:
-        return _read_pdf_with_fitz(path)
-    except Exception as fitz_error:
+    """PDF 默认先走 Docling，失败时再用 PyMuPDF / pdfplumber 兜底。"""
+    parser_name = choose_pdf_parser(domain)
+    if parser_name == "docling":
         try:
-            return _read_pdf_with_pdfplumber(path, include_tables=domain == "financial_contracts")
-        except Exception as plumber_error:
-            raise RuntimeError(
-                f"PDF extraction failed for {path}. PyMuPDF error={fitz_error}; "
-                f"pdfplumber error={plumber_error}"
-            ) from plumber_error
+            from agent.preprocess.docling_adapter import parse_pdf_with_docling
+
+            parsed_pages = parse_pdf_with_docling(path)
+            return [
+                PageText(
+                    page=page.page,
+                    text=normalize_text(page.text),
+                    tables=list(page.tables),
+                    figures=list(page.figures),
+                    parser_name=page.parser_name,
+                    ocr_used=page.ocr_used,
+                    metadata=dict(page.metadata),
+                )
+                for page in parsed_pages
+            ]
+        except Exception as docling_error:
+            try:
+                return _read_pdf_with_fitz(path)
+            except Exception as fitz_error:
+                try:
+                    return _read_pdf_with_pdfplumber(path, include_tables=domain == "financial_contracts")
+                except Exception as plumber_error:
+                    raise RuntimeError(
+                        f"PDF extraction failed for {path}. Docling error={docling_error}; "
+                        f"PyMuPDF error={fitz_error}; pdfplumber error={plumber_error}"
+                    ) from plumber_error
+    raise RuntimeError(f"Unsupported PDF parser: {parser_name}")
 
 
 def _read_pdf_with_fitz(path: Path) -> list[PageText]:

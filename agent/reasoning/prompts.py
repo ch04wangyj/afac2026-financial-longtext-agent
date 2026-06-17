@@ -1,4 +1,4 @@
-"""Qwen 作答 Prompt 模板。"""
+"""Qwen 作答与 LogicRAG Agent Prompt 模板。"""
 
 from __future__ import annotations
 
@@ -72,6 +72,127 @@ def build_option_judgement_messages(
 """
     return [
         {"role": "system", "content": f"{role} 不得使用外部知识，不得编造证据。"},
+        {"role": "user", "content": user},
+    ]
+
+
+def build_logicrag_plan_messages(
+    question: Question,
+    max_subproblems: int,
+    max_ranks: int,
+) -> list[dict[str, str]]:
+    """构造 LogicRAG 规划 Prompt，要求输出可解析 DAG JSON。"""
+    role = DOMAIN_ROLES.get(question.domain, "你是金融长文本问答专家。")
+    options = "\n".join(f"{key}. {value}" for key, value in sorted(question.options.items())) or "无"
+    user = f"""你现在是 LogicRAG规划器。请把题目拆成可检索、可组合的子问题 DAG。
+
+题型: {question.answer_format}
+题目: {question.question}
+选项:
+{options}
+
+约束:
+- 最多输出 {max_subproblems} 个子问题。
+- 最多 {max_ranks} 个依赖层级。
+- 每个子问题必须能直接用于检索证据。
+- depends_on 只能引用前面节点 id。
+- 不要输出空节点、重复节点或无意义改写。
+
+只输出 JSON:
+{{
+  "subproblems": [
+    {{"id": "n1", "text": "...", "depends_on": []}},
+    {{"id": "n2", "text": "...", "depends_on": ["n1"]}}
+  ],
+  "rationale": "一句话说明拆分逻辑"
+}}
+"""
+    return [
+        {"role": "system", "content": f"{role} 你负责 LogicRAG 规划，不得编造法规或事实。"},
+        {"role": "user", "content": user},
+    ]
+
+
+def build_logicrag_memory_summary_messages(
+    question: Question,
+    rank: int,
+    nodes: list,
+    evidence: list[RetrievalResult],
+    prior_memories: list[dict],
+    max_chars: int,
+) -> list[dict[str, str]]:
+    """构造按 rank 汇总局部记忆的 Prompt。"""
+    role = DOMAIN_ROLES.get(question.domain, "你是金融长文本问答专家。")
+    node_text = "\n".join(f"- {getattr(node, 'node_id', '')}: {getattr(node, 'text', '')}" for node in nodes) or "- 无"
+    prior_text = "\n".join(
+        f"rank={item.get('rank')}: {str(item.get('summary', ''))[:max_chars]}" for item in prior_memories
+    ) or "无上游记忆"
+    user = f"""你现在执行 LogicRAG memory summary。请汇总当前层级的证据，形成后续可复用短记忆。
+
+rank={rank}
+原题: {question.question}
+当前层子问题:
+{node_text}
+
+已有上游记忆:
+{prior_text}
+
+当前证据:
+{format_evidence(evidence)}
+
+输出要求:
+- 只输出纯文本摘要，不要 Markdown，不要 JSON。
+- 摘要长度不超过 {max_chars} 字。
+- 明确写出已确认事实、条件限制、仍不确定点。
+- 仅依据证据和上游记忆，不得补充外部知识。
+"""
+    return [
+        {"role": "system", "content": f"{role} 你负责 LogicRAG 分层记忆压缩，不得编造证据。"},
+        {"role": "user", "content": user},
+    ]
+
+
+def build_logicrag_final_compose_messages(
+    question: Question,
+    evidence: list[RetrievalResult],
+    logic_plan,
+    rank_memories: list[dict],
+) -> list[dict[str, str]]:
+    """构造 LogicRAG 最终作答 Prompt。"""
+    role = DOMAIN_ROLES.get(question.domain, "你是金融长文本问答专家。")
+    options = "\n".join(f"{key}. {value}" for key, value in sorted(question.options.items())) or "无"
+    plan_text = "\n".join(
+        f"- rank={getattr(node, 'rank', 0)} {getattr(node, 'node_id', '')}: {getattr(node, 'text', '')}"
+        for node in getattr(logic_plan, "nodes", [])
+    ) or "无"
+    memory_text = "\n".join(f"rank={item.get('rank')}: {item.get('summary', '')}" for item in rank_memories) or "无"
+    user = f"""你现在执行 LogicRAG final compose。请综合规划、分层记忆与原始证据作答。
+
+题型: {question.answer_format}
+题目: {question.question}
+选项:
+{options}
+
+LogicRAG 规划:
+{plan_text}
+
+分层记忆:
+{memory_text}
+
+最终证据:
+{format_evidence(evidence)}
+
+输出 JSON，字段包括:
+{{"answer":"A或ABCD","confidence":0到1之间的小数,"reason":"一句话依据"}}
+
+规则:
+- mcq/tf 只能输出单个大写字母。
+- multi 输出所有正确选项，按字母排序，无分隔符。
+- 严格依据证据与分层记忆，不得使用外部知识。
+- 证据不足时仍需给出最可能答案，并降低 confidence。
+"""
+    return [
+        {"role": "system", "content": f"{role} 你负责 LogicRAG 最终组合回答，不得编造证据。"},
         {"role": "user", "content": user},
     ]
 

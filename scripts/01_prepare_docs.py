@@ -12,8 +12,39 @@ sys.path.insert(0, str(ROOT))
 from agent.config import Settings
 from agent.data.doc_registry import DocRegistry
 from agent.data.questions import load_questions
-from agent.io.jsonl import write_jsonl
+from agent.io.jsonl import append_jsonl, append_jsonl_rows
 from agent.preprocess.pipeline import parse_document
+from agent.runtime.process_guard import assert_no_other_heavy_python_jobs
+from agent.schemas import Document
+
+
+def _reset_output_paths(settings: Settings) -> tuple[Path, Path]:
+    documents_path = settings.processed_dir / "documents.jsonl"
+    chunks_path = settings.processed_dir / "chunks.jsonl"
+    for path in (documents_path, chunks_path):
+        if path.exists():
+            path.unlink()
+    return documents_path, chunks_path
+
+
+def process_documents_streaming(
+    documents: list[Document],
+    settings: Settings,
+    *,
+    parse_document_fn=parse_document,
+    append_row_fn=append_jsonl,
+    append_rows_fn=append_jsonl_rows,
+) -> tuple[int, int]:
+    documents_path, chunks_path = _reset_output_paths(settings)
+    doc_count = 0
+    chunk_count = 0
+    for idx, document in enumerate(documents, start=1):
+        print(f"[{idx}/{len(documents)}] parsing {document.domain}/{document.doc_id}")
+        parsed, chunks = parse_document_fn(document)
+        append_row_fn(documents_path, parsed.to_dict())
+        doc_count += 1
+        chunk_count += append_rows_fn(chunks_path, (chunk.to_dict() for chunk in chunks))
+    return doc_count, chunk_count
 
 
 def main() -> None:
@@ -25,24 +56,15 @@ def main() -> None:
 
     settings = Settings.from_env()
     settings.ensure_dirs()
+    assert_no_other_heavy_python_jobs()
     questions = load_questions(settings.questions_root, domains=args.domains)
     registry = DocRegistry(settings.raw_root)
     documents = registry.build_documents_for_questions(questions)
     if args.limit:
         documents = documents[: args.limit]
 
-    parsed_docs = []
-    all_chunks = []
-    for idx, document in enumerate(documents, start=1):
-        # 按题目引用文档逐个解析，方便失败时定位到具体领域和 doc_id。
-        print(f"[{idx}/{len(documents)}] parsing {document.domain}/{document.doc_id}")
-        parsed, chunks = parse_document(document)
-        parsed_docs.append(parsed.to_dict())
-        all_chunks.extend(chunk.to_dict() for chunk in chunks)
-
-    write_jsonl(settings.processed_dir / "documents.jsonl", parsed_docs)
-    write_jsonl(settings.processed_dir / "chunks.jsonl", all_chunks)
-    print(f"wrote {len(parsed_docs)} documents and {len(all_chunks)} chunks")
+    doc_count, chunk_count = process_documents_streaming(documents, settings)
+    print(f"wrote {doc_count} documents and {chunk_count} chunks")
 
 
 if __name__ == "__main__":

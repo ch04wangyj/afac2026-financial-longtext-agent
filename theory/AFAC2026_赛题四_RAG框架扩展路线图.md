@@ -15,7 +15,7 @@
 
 1. 默认主路：`mixed + question_options`，因为 A 组 doc_id 代理评估里综合命中最稳。
 2. 纠错主路：`crag_lite`，当首轮检索置信不足时触发图式/规则补检索。
-3. 多跳主路：`logic_lite_rrf`，先用规则实体和选项构造子查询，V2 再换成 Qwen 生成 DAG。
+3. 多跳主路：`logic_lite_rrf`，先用规则实体和选项构造子查询；后续按 staged rollout 演进到 `logicrag_qwen_rrf`，不直接跳到 full-agent。
 4. B 榜盲搜候选：`linear_entity_rrf` + 文档级索引，后续演进成 relation-free hierarchical graph。
 5. 图谱路线：先做 `graph_lite_rrf` 的实体共现边，不急着上完整 GraphRAG/OpenSPG。
 
@@ -103,12 +103,47 @@ python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_opt
 - `logic_lite_rrf` 仅作为多选/财报候选补召回。
 - `graph_lite_rrf`、`linear_entity_rrf` 不进入默认排序，只保留实验开关。
 
-### V2：Qwen 驱动的动态结构
+### V2：Qwen 驱动的动态结构（按阶段推进，不替换默认主路）
 
-- LogicRAG-lite 升级：让 Qwen 为题目生成 3-6 个子问题和依赖顺序，仍用 BM25/RRF 检索。
-- CRAG-lite 升级：检索质量从 score gap 改为“规则分数 + Qwen 低成本判别”。
-- IRCoT-lite：低置信题按“子结论 → 补检索 → 再判断”迭代 1-2 轮。
-- 多选题改成逐选项判断，每个选项独立证据检索。
+#### V2-Stage 0：文档化与边界固化
+
+- 先在 `theory/references/notes/` 固化 LogicRAG 适配结论：只迁移“运行时 DAG / 分层检索 / pruning / rolling memory”思想。
+- 明确红线：**Qwen-only、BM25-only、可审计证据、不得引入 embedding/reranker/外部图系统**。
+- 同步废弃旧 `full evidence / adaptive evidence` 方案的 baseline 地位：它们只保留为历史记录，不再参与当前 ARS/LogicRAG 的正式 stop/go 判断。
+- 该阶段不接入答题链路，只统一实验口径与 stop/go 阈值。
+
+#### V2-Stage 1：`logicrag_qwen_rrf`（retrieval-first）
+
+- 让 Qwen 为题目生成 3-6 个子问题、依赖边、可裁剪节点。
+- 本地做 DAG 校验、去重、拓扑分层与同层 query merge。
+- 检索侧仍只用 BM25 / 文档级 BM25 / RRF，不改 solver 主链。
+- 评估口径优先看 A 组 `doc_ids` 代理指标：`all_gold@10`、`recall@10`、`mrr@10`、`hit@1`。
+- 若相对 `logic_lite_rrf` 没有稳定增益，则停留在 Stage 1，不继续扩大范围。
+
+#### V2-Stage 2：逐选项判定版 LogicRAG
+
+- 只在 retrieval-first 达标后推进。
+- 多选/判断题改成“公共上游节点 + 选项特异节点”的 DAG。
+- 公共节点负责文档、主体、年份、章节定位；选项节点负责数值、条件、例外条款验证。
+- 输出仍交给现有 solver 消化，不做大规模推理框架替换。
+
+#### V2-Stage 3：rolling memory + 低置信回补
+
+- 给每一层增加短摘要记忆：已确认事实、未解决空白、下层检索约束。
+- 与 `crag_lite` 协同：CRAG 负责决定“是否回补”，LogicRAG 负责决定“回补什么子问题”。
+- 只允许 1 次受控补检索，避免变成高成本多轮代理。
+
+#### V2-Stage 4：small live run
+
+- 仅在小样本上开启，不作为默认 variant。
+- 先跑 smoke/sample，对照 `question_options`、`crag_lite`、`logic_lite_rrf`。
+- 观察最终答案质量、证据可审计性、平均 token、单题耗时、回退率。
+- 只有在收益稳定且成本可控时，才考虑扩大到更大规模实验。
+
+#### V2 同步项
+
+- CRAG-lite 升级：检索质量从 score gap 扩展到“规则分数 + Qwen 低成本判别”。
+- IRCoT-lite：只在低置信题启用“子结论 → 补检索 → 再判断”1-2 轮，不进入默认主路。
 
 ### V3：B 榜盲搜和图谱
 

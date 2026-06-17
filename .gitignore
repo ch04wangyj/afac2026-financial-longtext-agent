@@ -12,9 +12,16 @@ venv/
 !.env.example
 agent/local_settings.py
 public_dataset_a/
+origin_dataset/
+.hermes/
 processed_data/
+processed_data_docling_smoke*/
 outputs/
 logs/
 *.log
 *.tmp
 theory/*.pdf
+theory/references/official/**
+!theory/references/official/.gitkeep
+theory/references/papers/**
+!theory/references/papers/.gitkeep

@@ -37,6 +37,18 @@ def append_jsonl(path: Path, row: dict) -> None:
         f.flush()
 
 
+def append_jsonl_rows(path: Path, rows: Iterable[dict]) -> int:
+    """批量追加多行 JSONL，减少高频 open/close 开销。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    count = 0
+    with path.open("a", encoding="utf-8", newline="\n") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            count += 1
+        f.flush()
+    return count
+
+
 def read_json(path: Path) -> dict | list:
     """读取普通 JSON 文件。"""
     with path.open("r", encoding="utf-8") as f:

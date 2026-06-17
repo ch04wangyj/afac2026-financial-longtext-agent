@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from agent.index.bm25 import BM25SearchIndex
 from agent.index.document_index import DocumentSearchIndex
+from agent.reasoning.logicrag import build_logicrag_rrf_queries
 from agent.retrieve.fusion import reciprocal_rank_fusion
 from agent.retrieve.query import build_rule_queries
 from agent.schemas import Question, RetrievalResult
@@ -51,7 +52,11 @@ class Retriever:
                 )
             )
 
-        for query in build_rule_queries(question):
+        queries = build_rule_queries(question)
+        if self.strategy in {"logicrag", "logicrag_agent"}:
+            queries = build_logicrag_rrf_queries(question)
+
+        for query in queries:
             ranked_lists.append(
                 self.index.search(
                     query=query,

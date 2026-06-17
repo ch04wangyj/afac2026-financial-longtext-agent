@@ -79,6 +79,52 @@ python scripts\05_compare_rag.py --domains financial_contracts --limit 5
 python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_options rule_multi_rrf field_boosted_rrf logic_lite_rrf linear_entity_rrf graph_lite_rrf crag_lite --output-name rag_compare_frameworks_mixed
 ```
 
+## LogicRAG Experimental Modes
+
+> **注意：LogicRAG 目前仍是实验开关，不是默认主线。**
+> 现阶段默认推荐主线仍是 `question_options` / `logic_lite_rrf` / `crag_lite` 一类稳健方案；只有在小样本验证收益明确时，才继续扩大 LogicRAG 使用范围。
+
+### 1) Retrieval-only：`logicrag_qwen_rrf`
+
+适合先看检索代理指标是否值得继续，不直接引入 full-agent 的额外 Token 成本。
+
+```powershell
+AFAC_RETRIEVAL_STRATEGY=logicrag_qwen_rrf python scripts\07_run_sample.py --dry-run --sample-size 20 --per-domain 4 --seed 20260616
+python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_options logic_lite_rrf logicrag_qwen_rrf --limit 40 --output-name rag_compare_logicrag_qwen_sample40
+```
+
+常见输出：
+
+```text
+outputs/rag_compare_logicrag_qwen_sample40/report.md
+outputs/rag_compare_logicrag_qwen_finance/report.md
+```
+
+### 2) Full-agent：`logicrag_agent`
+
+只有在 retrieval-only 已证明值得继续时，才建议打开 full-agent 试验。
+
+```powershell
+AFAC_LOGICRAG_ENABLED=true AFAC_RETRIEVAL_STRATEGY=logicrag_agent python scripts\06_smoke_by_domain.py --dry-run --per-domain 1
+AFAC_LOGICRAG_ENABLED=true AFAC_RETRIEVAL_STRATEGY=logicrag_agent python scripts\07_run_sample.py --sample-size 20 --per-domain 4 --seed 20260616
+python scripts\09_compare_runs.py --baseline outputs/sample20_baseline/answer_results.jsonl --candidate outputs/sample20_logicrag/answer_results.jsonl --output outputs/compare_sample20_baseline_vs_logicrag/comparison.md
+```
+
+常见输出：
+
+```text
+outputs/smoke_logicrag_dry/answer_results.jsonl
+outputs/sample20_logicrag/run_report.md
+outputs/compare_sample20_baseline_vs_logicrag/comparison.md
+```
+
+### 3) 推荐使用顺序
+
+1. 先跑默认稳健链路，建立 baseline。
+2. 再跑 `logicrag_qwen_rrf` 看 retrieval proxy 是否优于 `logic_lite_rrf`。
+3. 只有 retrieval-only 结果达标，再打开 `logicrag_agent` 做 smoke / sample20。
+4. 如果 Token 明显上升但 retrieval 或答案质量没有稳定改善，则保持 LogicRAG 为实验分支，不升级为默认主线。
+
 已完成的全量横向评估、框架路线图和代码 review 见：
 
 ```text
@@ -100,40 +146,40 @@ theory/AFAC2026_赛题四_RAG框架扩展路线图.md
 - `outputs/rag_compare/`: 不同 RAG/tokenizer 方案的检索命中横向比较。
 - `outputs/run_report.md`: 抽样运行后的 Token、证据覆盖和格式风险诊断。
 
-## Current Baseline
+## Historical Note (Not a Valid Current Baseline)
 
-截至 2026-06-09，已完成同一 20 题分层样本的真实 Qwen 回归：
+以下 `full evidence / adaptive evidence` 结果仅保留为**历史实验记录**，**不再作为当前 baseline，也不应作为可提交方案依据**。原因是这条旧方案不属于当前 ARS/LogicRAG 评估口径，继续拿它做比较会混淆“当前无 embedding 主线内部”的真实收益判断。
+
+截至 2026-06-09，曾完成同一 20 题分层样本的真实 Qwen 回归：
 
 | run | total_tokens | answer_changes_vs_full | issues |
 |---|---:|---:|---|
 | full evidence 8/6000 | 158216 | 0 | 无格式/证据/verdict 问题 |
 | adaptive evidence | 145895 | 0 | 无格式/证据/verdict 问题 |
 
-自适应证据预算在样本上比 full evidence 少 `12321` tokens，且答案完全一致。完整报告在：
+对应历史产物仍可留档，但后续 stop/go 判断不再基于它们：
 
 ```text
 outputs/live_sample20_adaptive/run_report.md
 outputs/compare_sample20_full_vs_adaptive/comparison.md
-```
-
-已完成 A 组 100 题真实运行：
-
-| output | value |
-|---|---:|
-| question_rows | 100 |
-| prompt_tokens | 989706 |
-| completion_tokens | 12586 |
-| total_tokens | 1002292 |
-| detected issues | 0 |
-
-全量产物在：
-
-```text
 outputs/a_full_adaptive/answer.csv
 outputs/a_full_adaptive/evidence.json
 outputs/a_full_adaptive/token_usage.json
 outputs/a_full_adaptive/run_report.md
 ```
+
+## Current Valid Baseline Scope
+
+当前允许作为正式比较对象的基线范围只保留：
+
+- `question_options`
+- `logic_lite_rrf`
+- `crag_lite`
+
+其中：
+
+- `logicrag_qwen_rrf` / `logicrag_agent` 只作为 ARS 实验分支
+- 不再把旧 adaptive/full evidence 方案当作默认主线或 rollout 依据
 
 ## Development Rules
 

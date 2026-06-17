@@ -43,6 +43,7 @@ def tokenize(text: str, use_jieba: bool = True, mode: TokenizerMode = "mixed") -
 
 def tokenize_chunk(chunk: Chunk, mode: TokenizerMode = "mixed") -> list[str]:
     """索引 chunk 时把标题、章节、条款、表格、数字和日期都纳入检索字段。"""
+    extra_index_fields = chunk.metadata.get("extra_index_fields", [])
     fields = [
         chunk.metadata.get("title", ""),
         chunk.section,
@@ -51,6 +52,7 @@ def tokenize_chunk(chunk: Chunk, mode: TokenizerMode = "mixed") -> list[str]:
         " ".join(chunk.tables),
         " ".join(chunk.numbers),
         " ".join(chunk.dates),
+        " ".join(str(item) for item in extra_index_fields if str(item).strip()),
     ]
     return tokenize(" ".join(fields), mode=mode)
 

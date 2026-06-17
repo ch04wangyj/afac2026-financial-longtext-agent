@@ -72,6 +72,14 @@ class Settings:
     option_judgement_max_tokens: int = 256
     option_judgement_enable_thinking: bool = False
     enable_multi_option_judgement: bool = True
+    logicrag_enabled: bool = False
+    retrieval_strategy: str = "hybrid"
+    logicrag_max_subproblems: int = 6
+    logicrag_max_ranks: int = 4
+    logicrag_rank_top_k: int = 12
+    logicrag_memory_chars: int = 4500
+    logicrag_plan_max_tokens: int = 768
+    logicrag_summary_max_tokens: int = 384
     request_timeout_seconds: int = 120
     max_retries: int = 2
 
@@ -104,6 +112,20 @@ class Settings:
             ),
             enable_multi_option_judgement=_env_bool(
                 "AFAC_ENABLE_MULTI_OPTION_JUDGEMENT", cls.enable_multi_option_judgement
+            ),
+            logicrag_enabled=_env_bool("AFAC_LOGICRAG_ENABLED", cls.logicrag_enabled),
+            retrieval_strategy=_setting("AFAC_RETRIEVAL_STRATEGY", cls.retrieval_strategy),
+            logicrag_max_subproblems=int(
+                _setting("AFAC_LOGICRAG_MAX_SUBPROBLEMS", str(cls.logicrag_max_subproblems))
+            ),
+            logicrag_max_ranks=int(_setting("AFAC_LOGICRAG_MAX_RANKS", str(cls.logicrag_max_ranks))),
+            logicrag_rank_top_k=int(_setting("AFAC_LOGICRAG_RANK_TOP_K", str(cls.logicrag_rank_top_k))),
+            logicrag_memory_chars=int(_setting("AFAC_LOGICRAG_MEMORY_CHARS", str(cls.logicrag_memory_chars))),
+            logicrag_plan_max_tokens=int(
+                _setting("AFAC_LOGICRAG_PLAN_MAX_TOKENS", str(cls.logicrag_plan_max_tokens))
+            ),
+            logicrag_summary_max_tokens=int(
+                _setting("AFAC_LOGICRAG_SUMMARY_MAX_TOKENS", str(cls.logicrag_summary_max_tokens))
             ),
         )
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from agent.index.bm25 import BM25SearchIndex
 from agent.preprocess.chunkers import extract_dates, extract_numbers
+from agent.reasoning.logicrag import build_logicrag_rrf_queries
 from agent.retrieve.fusion import reciprocal_rank_fusion
 from agent.retrieve.query import build_rule_queries
 from agent.retrieve.structured_queries import (
@@ -32,6 +33,7 @@ RAG_VARIANTS = [
     RagVariant("rule_multi_rrf", "RRF over rule-generated queries with numbers/dates/options"),
     RagVariant("field_boosted_rrf", "rule_multi_rrf plus clause/number/date/title boosts"),
     RagVariant("logic_lite_rrf", "LogicRAG-lite: query-time subproblem DAG approximated by option/entity subqueries"),
+    RagVariant("logicrag_qwen_rrf", "LogicRAG retrieval-first: Qwen-planned subproblems fused with BM25/RRF"),
     RagVariant("linear_entity_rrf", "LinearRAG-lite: linear high-signal entity queries"),
     RagVariant("graph_lite_rrf", "GraphRAG-lite: entity co-occurrence pair queries without pre-built graph"),
     RagVariant("crag_lite", "CRAG-lite: question_options with corrective fallback to graph/rule retrieval"),
@@ -91,6 +93,13 @@ def retrieve_with_variant(
         ranked_lists = [
             index.search(query, top_k=top_k, filter_doc_ids=filter_doc_ids, source=variant.name)
             for query in build_logic_queries(question)
+        ]
+        return reciprocal_rank_fusion(ranked_lists, top_k=top_k)
+
+    if variant.name == "logicrag_qwen_rrf":
+        ranked_lists = [
+            index.search(query, top_k=top_k, filter_doc_ids=filter_doc_ids, source=variant.name)
+            for query in build_logicrag_rrf_queries(question)
         ]
         return reciprocal_rank_fusion(ranked_lists, top_k=top_k)
 

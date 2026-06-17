@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -168,3 +169,98 @@ class AnswerResult:
             raw_response=data.get("raw_response", ""),
             metadata=data.get("metadata", {}),
         )
+
+
+@dataclass
+class LogicNode:
+    """LogicRAG 规划中的单个子问题节点。"""
+
+    node_id: str
+    text: str
+    depends_on: list[str] = field(default_factory=list)
+    rank: int = 0
+    pruned: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LogicNode":
+        return cls(
+            node_id=str(data.get("node_id") or data.get("id") or "").strip(),
+            text=str(data.get("text") or data.get("question") or "").strip(),
+            depends_on=[str(item).strip() for item in data.get("depends_on", []) if str(item).strip()],
+            rank=int(data.get("rank", 0) or 0),
+            pruned=bool(data.get("pruned", False)),
+            metadata=dict(data.get("metadata", {})),
+        )
+
+    def normalized_text(self) -> str:
+        """用于去重的轻量文本归一化。"""
+        return " ".join(self.text.split()).casefold()
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class LogicPlan:
+    """LogicRAG 规划结果，保存 DAG 节点与整体说明。"""
+
+    nodes: list[LogicNode] = field(default_factory=list)
+    rationale: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LogicPlan":
+        node_rows = data.get("nodes") or data.get("subproblems") or []
+        return cls(
+            nodes=[LogicNode.from_dict(row) for row in node_rows],
+            rationale=str(data.get("rationale", "")),
+            metadata=dict(data.get("metadata", {})),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "nodes": [node.to_dict() for node in self.nodes],
+            "rationale": self.rationale,
+            "metadata": dict(self.metadata),
+        }
+
+    def node_map(self) -> dict[str, LogicNode]:
+        return {node.node_id: node for node in self.nodes}
+
+    def topological_levels(self) -> list[list[str]]:
+        """按依赖层级返回节点 ID，并同步写回 rank。"""
+        node_map = self.node_map()
+        node_ids = [node.node_id for node in self.nodes]
+        node_set = set(node_ids)
+        indegree = {node_id: 0 for node_id in node_ids}
+        outgoing = {node_id: [] for node_id in node_ids}
+        for node in self.nodes:
+            for dep in node.depends_on:
+                if dep not in node_set:
+                    continue
+                indegree[node.node_id] += 1
+                outgoing[dep].append(node.node_id)
+
+        queue = deque(node_id for node_id in node_ids if indegree[node_id] == 0)
+        levels: list[list[str]] = []
+        visited = 0
+        current_rank = 0
+        while queue:
+            level_size = len(queue)
+            level: list[str] = []
+            for _ in range(level_size):
+                node_id = queue.popleft()
+                level.append(node_id)
+                visited += 1
+                node_map[node_id].rank = current_rank
+                for child in outgoing[node_id]:
+                    indegree[child] -= 1
+                    if indegree[child] == 0:
+                        queue.append(child)
+            levels.append(level)
+            current_rank += 1
+
+        if visited != len(self.nodes):
+            raise ValueError("logic plan contains cycle")
+        return levels

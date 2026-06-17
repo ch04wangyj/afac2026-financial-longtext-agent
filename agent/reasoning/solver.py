@@ -6,8 +6,13 @@ import re
 
 from agent.compress.rule_filter import RuleEvidenceCompressor
 from agent.llm.qwen_client import QwenClient
+from agent.reasoning import logicrag
 from agent.reasoning.answer_parser import extract_json_object, parse_answer, parse_verdict
-from agent.reasoning.prompts import build_answer_messages, build_option_judgement_messages
+from agent.reasoning.prompts import (
+    build_answer_messages,
+    build_logicrag_final_compose_messages,
+    build_option_judgement_messages,
+)
 from agent.retrieve.retriever import Retriever
 from agent.schemas import AnswerResult, Question, RetrievalResult, TokenUsage
 
@@ -23,6 +28,8 @@ class Solver:
 
     def solve(self, question: Question) -> AnswerResult:
         """处理一道题并返回可提交答案与可审计证据。"""
+        if self.llm.settings.retrieval_strategy == "logicrag_agent" and self.llm.settings.logicrag_enabled:
+            return self._solve_logicrag_agent(question)
         if question.answer_format == "multi" and self.llm.settings.enable_multi_option_judgement:
             return self._solve_multi_by_option(question)
 
@@ -52,6 +59,90 @@ class Solver:
                 "answer_format": question.answer_format,
                 "domain": question.domain,
                 "reasoning": response.reasoning,
+            },
+        )
+
+    def _solve_logicrag_agent(self, question: Question) -> AnswerResult:
+        """显式执行 LogicRAG agent：规划 -> rank-wise 检索/记忆 -> compose。"""
+        total_usage = TokenUsage()
+        plan, plan_response = logicrag.plan_logic_subproblems_with_qwen(
+            question,
+            self.llm,
+            max_subproblems=self.llm.settings.logicrag_max_subproblems,
+            max_ranks=self.llm.settings.logicrag_max_ranks,
+        )
+        total_usage.add(plan_response.usage)
+
+        rank_groups = logicrag.build_rankwise_query_groups(question, plan)
+        filter_doc_ids = self.retriever._candidate_doc_filter(question, True)
+        rank_memories: list[dict] = []
+        combined: list[RetrievalResult] = []
+        seen_chunks: set[str] = set()
+
+        for group in rank_groups:
+            rank_queries = logicrag.build_rankwise_queries_for_group(question, group, prior_memories=rank_memories)
+            ranked_lists = [
+                self.retriever.index.search(
+                    query=query,
+                    top_k=max(1, min(self.retriever.top_k_per_query, self.llm.settings.logicrag_rank_top_k)),
+                    filter_doc_ids=filter_doc_ids,
+                    source=f"logicrag_agent_rank_{group['rank']}",
+                )
+                for query in rank_queries
+            ]
+            rank_results = logicrag.reciprocal_rank_fusion(ranked_lists, top_k=self.llm.settings.logicrag_rank_top_k)
+            for item in rank_results:
+                if item.chunk_id not in seen_chunks:
+                    combined.append(item)
+                    seen_chunks.add(item.chunk_id)
+            response = logicrag.summarize_rank_memory_with_qwen(
+                question,
+                self.llm,
+                rank=group["rank"],
+                nodes=group["nodes"],
+                evidence=rank_results,
+                prior_memories=rank_memories,
+                max_chars=self.llm.settings.logicrag_memory_chars,
+            )
+            total_usage.add(response.usage)
+            rank_memories.append(
+                {
+                    "rank": group["rank"],
+                    "summary": response.text,
+                    "evidence_doc_ids": list(dict.fromkeys(item.doc_id for item in rank_results))[:3],
+                }
+            )
+
+        evidence = self.compressor.compress(question, combined)
+        messages = build_logicrag_final_compose_messages(question, evidence, plan, rank_memories)
+        response = self.llm.chat(
+            messages,
+            temperature=0.0,
+            max_tokens=self.llm.settings.answer_max_tokens,
+            enable_thinking=self.llm.settings.answer_enable_thinking,
+        )
+        total_usage.add(response.usage)
+
+        answer = parse_answer(response.text, question.answer_format)
+        confidence = _extract_confidence(response.text)
+        if not answer:
+            answer = "A"
+            confidence = 0.0
+        return AnswerResult(
+            qid=question.qid,
+            answer=answer,
+            confidence=confidence,
+            evidence=evidence,
+            token_usage=total_usage,
+            raw_response=response.text,
+            metadata={
+                "answer_format": question.answer_format,
+                "domain": question.domain,
+                "strategy": "logicrag_agent",
+                "reasoning": response.reasoning,
+                "logic_plan": plan.to_dict(),
+                "plan_token_usage": plan_response.usage.to_dict(),
+                "rank_memories": rank_memories,
             },
         )
 
