@@ -16,6 +16,7 @@ from agent.io.jsonl import write_json
 from agent.io.output_layout import infer_artifact_dir_from_results
 
 
+
 def main() -> None:
     """读取 answer_results.jsonl 和可选 sample_manifest.json，生成诊断报告。"""
     parser = argparse.ArgumentParser(description="Report answer/token/evidence diagnostics.")
@@ -36,6 +37,7 @@ def main() -> None:
     output_path.write_text(report["markdown"], encoding="utf-8")
     write_json(output_path.with_suffix(".json"), report["data"])
     print(f"wrote report -> {output_path}")
+
 
 
 def build_report(rows: list[dict], manifest: dict[str, dict]) -> dict:
@@ -83,6 +85,7 @@ def build_report(rows: list[dict], manifest: dict[str, dict]) -> dict:
     return {"markdown": _to_markdown(data), "data": data}
 
 
+
 def _load_manifest(path: Path) -> dict[str, dict]:
     """读取抽样清单；没有清单时返回空字典。"""
     if not path.exists():
@@ -91,9 +94,11 @@ def _load_manifest(path: Path) -> dict[str, dict]:
     return {item["qid"]: item for item in items}
 
 
+
 def _empty_stats() -> dict:
     """初始化聚合桶。"""
     return {"n": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
 
 
 def _add_stats(bucket: dict, usage: dict) -> None:
@@ -103,22 +108,29 @@ def _add_stats(bucket: dict, usage: dict) -> None:
         bucket[key] += int(usage.get(key, 0))
 
 
+
 def _diagnose_issue(row: dict, manifest: dict, docs: list[str]) -> dict | None:
     """检查答案格式、证据文档覆盖和逐选项空判断。"""
     answer = row.get("answer", "")
-    answer_format = manifest.get("answer_format") or row.get("metadata", {}).get("answer_format", "")
+    meta = row.get("metadata", {})
+    answer_format = manifest.get("answer_format") or meta.get("answer_format", "")
     legal = bool(answer) and set(answer).issubset(set("ABCD"))
     if answer_format != "multi":
         legal = legal and len(answer) == 1
     else:
         legal = legal and answer == "".join(sorted(set(answer)))
-    missing_docs = sorted(set(manifest.get("doc_ids") or []) - set(docs))
+    coverage_report = meta.get("coverage_report") or {}
+    missing_docs = coverage_report.get("missing_doc_ids") or sorted(set(manifest.get("doc_ids") or []) - set(docs))
     none_opts = [
         item.get("option")
-        for item in row.get("metadata", {}).get("option_judgements", [])
+        for item in meta.get("option_judgements", [])
         if item.get("verdict") is None
     ]
-    if legal and not missing_docs and not none_opts:
+    option_coverage = meta.get("option_coverage") or {}
+    missing_option_evidence = [key for key, item in option_coverage.items() if item.get("missing")]
+    low_confidence = float(row.get("confidence", 0.0) or 0.0) < 0.65
+    metric_missing = bool((meta.get("financial_metric_extraction") or {}).get("missing_metrics"))
+    if legal and not missing_docs and not none_opts and not missing_option_evidence and not metric_missing and not low_confidence:
         return None
     return {
         "qid": row.get("qid"),
@@ -127,8 +139,13 @@ def _diagnose_issue(row: dict, manifest: dict, docs: list[str]) -> dict | None:
         "legal": legal,
         "missing_docs": missing_docs,
         "none_options": none_opts,
+        "missing_option_evidence": missing_option_evidence,
+        "low_confidence": low_confidence,
+        "metric_missing": metric_missing,
+        "strategy": meta.get("strategy", "single_pass"),
         "evidence_docs": docs,
     }
+
 
 
 def _to_markdown(data: dict) -> str:
@@ -163,7 +180,19 @@ def _to_markdown(data: dict) -> str:
         lines.append("No format/evidence/verdict issues detected.")
     else:
         for issue in data["issues"]:
-            lines.append(f"- `{issue['qid']}`: {issue}")
+            tags = []
+            if issue.get("missing_docs"):
+                tags.append("missing_doc_coverage")
+            if issue.get("missing_option_evidence"):
+                tags.append("missing_option_evidence")
+            if issue.get("none_options"):
+                tags.append("option_matrix")
+            if issue.get("metric_missing"):
+                tags.append("financial_metric_missing")
+            if issue.get("low_confidence"):
+                tags.append("low_confidence")
+            tag_text = f" tags={tags}" if tags else ""
+            lines.append(f"- `{issue['qid']}`:{tag_text} {issue}")
     lines.extend(["", "## Details", "", "| qid | domain | format | answer | strategy | total_tokens | evidence_docs |"])
     lines.append("|---|---|---|---|---|---:|---|")
     for row in data["details"]:

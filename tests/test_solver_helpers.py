@@ -97,7 +97,16 @@ class SolverHelpersTest(unittest.TestCase):
                 '{"verdict":false,"confidence":0.7}',
             ]
         )
-        solver = Solver(FakeRetriever(), RuleEvidenceCompressor(max_chars=1000, top_k=2), llm)
+        with patch("agent.reasoning.solver.load_logicrag_runtime_config", return_value=build_runtime_config()):
+            solver = Solver(FakeRetriever(), RuleEvidenceCompressor(max_chars=1000, top_k=2), llm)
+            solver.runtime = LogicRAGRuntimeConfig(
+                qwen=solver.runtime.qwen,
+                thinking_profiles=solver.runtime.thinking_profiles,
+                logicrag=solver.runtime.logicrag,
+                a_board=solver.runtime.a_board,
+                concurrency=ConcurrencyConfig(question_workers=1, qwen_workers=1, qwen_request_limit=100, bm25_workers=1),
+                source_path=solver.runtime.source_path,
+            )
 
         result = solver.solve(question)
 
@@ -125,7 +134,16 @@ class SolverHelpersTest(unittest.TestCase):
                 '{"answer":"C","confidence":0.8}',
             ]
         )
-        solver = Solver(FakeRetriever(), RuleEvidenceCompressor(max_chars=1000, top_k=2), llm)
+        with patch("agent.reasoning.solver.load_logicrag_runtime_config", return_value=build_runtime_config()):
+            solver = Solver(FakeRetriever(), RuleEvidenceCompressor(max_chars=1000, top_k=2), llm)
+            solver.runtime = LogicRAGRuntimeConfig(
+                qwen=solver.runtime.qwen,
+                thinking_profiles=solver.runtime.thinking_profiles,
+                logicrag=solver.runtime.logicrag,
+                a_board=solver.runtime.a_board,
+                concurrency=ConcurrencyConfig(question_workers=1, qwen_workers=1, qwen_request_limit=100, bm25_workers=1),
+                source_path=solver.runtime.source_path,
+            )
 
         result = solver.solve(question)
 
