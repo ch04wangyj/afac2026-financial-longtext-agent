@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent.runtime.logicrag_config import load_logicrag_runtime_config
+from agent.runtime.logicrag_config import ThinkingProfile, load_logicrag_runtime_config
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -174,6 +174,14 @@ class Settings:
         self.processed_dir.mkdir(parents=True, exist_ok=True)
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
         self.index_dir.mkdir(parents=True, exist_ok=True)
+
+    def thinking_profile_for_step(self, step_name: str) -> ThinkingProfile:
+        """按步骤名返回 thinking profile，作为各推理阶段的统一预算入口。"""
+        runtime = load_logicrag_runtime_config()
+        try:
+            return runtime.thinking_profiles[step_name]
+        except KeyError as exc:
+            raise KeyError(f"Unknown thinking step: {step_name}") from exc
 
 
 def get_api_key() -> str | None:

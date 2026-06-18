@@ -36,14 +36,14 @@ class Solver:
         if question.answer_format == "multi" and self.llm.settings.enable_multi_option_judgement:
             return self._solve_multi_by_option(question)
 
+        answer_profile = self.llm.settings.thinking_profile_for_step("answer_single_pass")
         retrieved = self.retriever.retrieve(question)
         evidence = self.compressor.compress(question, retrieved)
         messages = build_answer_messages(question, evidence)
         response = self.llm.chat(
             messages,
             temperature=0.0,
-            max_tokens=self.llm.settings.answer_max_tokens,
-            enable_thinking=True,
+            thinking_profile=answer_profile,
         )
         answer = parse_answer(response.text, question.answer_format)
         confidence = _extract_confidence(response.text)
@@ -121,13 +121,13 @@ class Solver:
                 }
             )
 
+        final_compose_profile = self.llm.settings.thinking_profile_for_step("logicrag_final_compose")
         evidence = self.compressor.compress(question, combined)
         messages = build_logicrag_final_compose_messages(question, evidence, plan, rank_memories)
         response = self.llm.chat(
             messages,
             temperature=0.0,
-            max_tokens=self.llm.settings.answer_max_tokens,
-            enable_thinking=True,
+            thinking_profile=final_compose_profile,
         )
         total_usage.add(response.usage)
 
@@ -178,12 +178,12 @@ class Solver:
             )
             retrieved = self.retriever.retrieve(option_question)
             evidence = self._option_compressor(question.domain).compress(option_question, retrieved)
+            option_profile = self.llm.settings.thinking_profile_for_step("option_judgement")
             messages = build_option_judgement_messages(question, option_key, option_text, evidence)
             response = self.llm.chat(
                 messages,
                 temperature=0.0,
-                max_tokens=self.llm.settings.option_judgement_max_tokens,
-                enable_thinking=True,
+                thinking_profile=option_profile,
             )
             return {
                 "option": option_key,
@@ -264,14 +264,14 @@ class Solver:
         seen_chunks: set[str],
     ) -> dict:
         """逐选项全否时追加整体复核，并把 Token 与证据合并回主结果。"""
+        fallback_profile = self.llm.settings.thinking_profile_for_step("multi_option_fallback")
         retrieved = self.retriever.retrieve(question)
         evidence = self.compressor.compress(question, retrieved)
         messages = build_answer_messages(question, evidence)
         response = self.llm.chat(
             messages,
             temperature=0.0,
-            max_tokens=self.llm.settings.answer_max_tokens,
-            enable_thinking=True,
+            thinking_profile=fallback_profile,
         )
         total_usage.add(response.usage)
         for item in evidence:

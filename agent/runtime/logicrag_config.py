@@ -124,11 +124,12 @@ def _read_yaml(path: Path) -> dict:
 
 def _with_default_profiles(profiles: dict[str, ThinkingProfile]) -> dict[str, ThinkingProfile]:
     defaults = {
-        "answer_single_pass": ThinkingProfile(enabled=True, max_tokens=768),
+        "answer_single_pass": ThinkingProfile(enabled=False, max_tokens=384),
         "logicrag_planner": ThinkingProfile(enabled=True, max_tokens=1024),
-        "logicrag_rank_summary": ThinkingProfile(enabled=True, max_tokens=768),
+        "logicrag_rank_summary": ThinkingProfile(enabled=True, max_tokens=640),
         "logicrag_final_compose": ThinkingProfile(enabled=True, max_tokens=1024),
-        "option_judgement": ThinkingProfile(enabled=True, max_tokens=512),
+        "option_judgement": ThinkingProfile(enabled=False, max_tokens=192),
+        "multi_option_fallback": ThinkingProfile(enabled=True, max_tokens=512),
     }
     merged = dict(defaults)
     merged.update(profiles)

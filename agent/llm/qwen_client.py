@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import requests
 
 from agent.config import Settings, get_api_key
+from agent.runtime.logicrag_config import ThinkingProfile
 from agent.runtime.parallel import acquire_named_permit, acquire_named_quota, track_active
 from agent.schemas import TokenUsage
 
@@ -43,17 +44,23 @@ class QwenClient:
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int | None = None,
         enable_thinking: bool | None = None,
+        thinking_profile: ThinkingProfile | None = None,
     ) -> LLMResponse:
         """调用 Qwen 聊天接口；真实调用固定走非流式 HTTP JSON 路径。"""
+        if thinking_profile is not None:
+            effective_max_tokens = thinking_profile.max_tokens
+            thinking = thinking_profile.enabled
+        else:
+            effective_max_tokens = self.settings.answer_max_tokens if max_tokens is None else max_tokens
+            thinking = self.settings.qwen_enable_thinking if enable_thinking is None else enable_thinking
         if self.dry_run:
             prompt_chars = sum(len(message.get("content", "")) for message in messages)
             usage = TokenUsage(prompt_tokens=max(1, prompt_chars // 2), completion_tokens=1)
             return LLMResponse(text='{"answer":"A","confidence":0.0,"reason":"dry-run"}', usage=usage)
 
         last_error: Exception | None = None
-        thinking = self.settings.qwen_enable_thinking if enable_thinking is None else enable_thinking
         url = self.settings.qwen_base_url.rstrip("/") + "/chat/completions"
         for attempt in range(self.settings.max_retries + 1):
             try:
@@ -61,7 +68,7 @@ class QwenClient:
                     "model": self.settings.qwen_model,
                     "messages": messages,
                     "temperature": temperature,
-                    "max_tokens": max_tokens,
+                    "max_tokens": effective_max_tokens,
                     "enable_thinking": thinking,
                 }
                 with acquire_named_quota("qwen", self.settings.qwen_request_limit), acquire_named_permit(

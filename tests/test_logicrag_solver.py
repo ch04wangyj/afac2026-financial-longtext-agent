@@ -7,7 +7,19 @@ from agent.config import Settings
 from agent.llm.qwen_client import LLMResponse
 from agent.reasoning import logicrag
 from agent.reasoning.solver import Solver
+from agent.runtime.logicrag_config import ThinkingProfile
 from agent.schemas import Question, RetrievalResult, TokenUsage
+
+
+def build_thinking_profiles() -> dict[str, ThinkingProfile]:
+    return {
+        "answer_single_pass": ThinkingProfile(enabled=False, max_tokens=384),
+        "logicrag_planner": ThinkingProfile(enabled=True, max_tokens=1024),
+        "logicrag_rank_summary": ThinkingProfile(enabled=True, max_tokens=640),
+        "logicrag_final_compose": ThinkingProfile(enabled=True, max_tokens=1024),
+        "option_judgement": ThinkingProfile(enabled=False, max_tokens=192),
+        "multi_option_fallback": ThinkingProfile(enabled=True, max_tokens=512),
+    }
 
 
 class LogicRAGSolverTest(unittest.TestCase):
@@ -186,8 +198,37 @@ class LogicRAGSolverTest(unittest.TestCase):
         self.assertTrue(all(call["enable_thinking"] is True for call in fake_llm.calls))
         self.assertEqual(
             [call["max_tokens"] for call in fake_llm.calls],
-            [256, 128, 128, 128],
+            [1024, 640, 640, 1024],
         )
+
+    def test_standard_answer_path_uses_low_budget_profile(self):
+        question = Question(
+            qid="q_standard",
+            domain="regulatory",
+            split="A",
+            question="根据客户尽职调查要求，银行是否必须识别受益所有人并保存身份资料？",
+            options={"A": "不需要识别受益所有人", "B": "需要识别受益所有人并保存身份资料"},
+            answer_format="mcq",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(
+            retrieval_strategy="logicrag_agent",
+            logicrag_enabled=False,
+            answer_max_tokens=128,
+        )
+        fake_llm = FakeStandardLLM(settings)
+        solver = Solver(
+            FakeLogicRetriever(),
+            RuleEvidenceCompressor(max_chars=1200, top_k=3),
+            fake_llm,
+        )
+
+        result = solver.solve(question)
+
+        self.assertEqual(result.answer, "B")
+        self.assertEqual(len(fake_llm.calls), 1)
+        self.assertEqual(fake_llm.calls[0]["max_tokens"], 384)
+        self.assertFalse(fake_llm.calls[0]["enable_thinking"])
 
 
 class FakeLogicRetriever:
@@ -241,8 +282,19 @@ class FakeLogicLLM:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.calls = []
+        self.profiles = build_thinking_profiles()
 
-    def chat(self, messages, temperature=0.0, max_tokens=0, enable_thinking=None):
+    def chat(
+        self,
+        messages,
+        temperature=0.0,
+        max_tokens=0,
+        enable_thinking=None,
+        thinking_profile=None,
+    ):
+        if thinking_profile is not None:
+            max_tokens = thinking_profile.max_tokens
+            enable_thinking = thinking_profile.enabled
         self.calls.append({"max_tokens": max_tokens, "enable_thinking": enable_thinking})
         prompt = "\n".join(message.get("content", "") for message in messages)
         if "LogicRAG规划器" in prompt:
@@ -267,8 +319,21 @@ class FakeLogicLLM:
 class FakeStandardLLM:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.calls = []
+        self.profiles = build_thinking_profiles()
 
-    def chat(self, messages, temperature=0.0, max_tokens=0, enable_thinking=None):
+    def chat(
+        self,
+        messages,
+        temperature=0.0,
+        max_tokens=0,
+        enable_thinking=None,
+        thinking_profile=None,
+    ):
+        if thinking_profile is not None:
+            max_tokens = thinking_profile.max_tokens
+            enable_thinking = thinking_profile.enabled
+        self.calls.append({"max_tokens": max_tokens, "enable_thinking": enable_thinking})
         return LLMResponse(
             text='{"answer":"B","confidence":0.72,"reason":"证据显示需要识别受益所有人并保存身份资料"}',
             usage=TokenUsage(prompt_tokens=3, completion_tokens=2),

@@ -215,8 +215,9 @@ outputs/a_full_adaptive/run_report.md
 - `03/06/07` 运行脚本已支持逐题 checkpoint 和 `--resume`，全量 A 组真实调用建议始终指定独立 `AFAC_OUTPUTS_DIR`。
 - 如需清理历史无用输出，先执行 `python scripts/10_cleanup_outputs.py --dry-run`，确认后再执行 `--apply`。
 - 默认模型为 `qwen3.7-plus`，可切换到 `qwen3.7-max`；使用百炼 OpenAI-compatible API 和流式输出，并尽量通过 `stream_options.include_usage` 获取真实 Token。
-- 为控制 Token，普通答题和逐选项判断默认覆盖为 `enable_thinking=false`；低置信复核时再显式打开 thinking 或切换 max。
+- 思考预算按步骤分层配置在 `configs/logicrag_runtime.yaml`：`logicrag_planner` / `logicrag_final_compose` 默认高预算，`logicrag_rank_summary` 中预算，普通答题与逐选项判断默认低预算或关闭 thinking；仅在 `multi_option_fallback` 这类复核步骤再回升预算。
 - 逐选项判断使用独立证据预算：默认 `AFAC_OPTION_TOP_K_EVIDENCE=6`、`AFAC_OPTION_EVIDENCE_CHARS=5000`；研报自动提升到 full 预算，避免遗漏长文档趋势证据。
 - 原版 GraphRAG/LightRAG/HippoRAG/RAPTOR/Self-RAG/OpenSPG 不进入默认链路；只允许无 embedding、无非 Qwen 模型的 lite 思想作为实验分支。
 - V1 默认 `question_options` 主检索；多选题已启用逐选项判断；B 榜无 `doc_ids` 时使用文档级 BM25 盲搜候选。
 - V2 后续再加入 Qwen 子问题 DAG、IterKey、Calculator、IRCoT-lite 和低置信 CoVe。
+

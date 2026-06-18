@@ -65,8 +65,65 @@ def test_qwen_client_non_stream_request_uses_dashscope_http_json(monkeypatch):
     assert captured["headers"]["Authorization"] == "Bearer test-key"
     assert captured["json"]["model"] == "qwen-plus"
     assert captured["json"]["enable_thinking"] is False
+    assert captured["json"]["max_tokens"] == 16
     assert "extra_body" not in captured["json"]
     assert captured["timeout"] == 30
+
+
+
+def test_qwen_client_uses_thinking_profile_payload(monkeypatch):
+    captured: dict = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["json"] = json
+        return FakeResponse(
+            {
+                "choices": [{"message": {"content": "OK"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+        )
+
+    monkeypatch.setattr(qwen_client_module, "get_api_key", lambda: "test-key")
+    monkeypatch.setattr(qwen_client_module.requests, "post", fake_post)
+
+    client = QwenClient(_settings(), dry_run=False)
+    profile = qwen_client_module.ThinkingProfile(enabled=False, max_tokens=192)
+
+    client.chat(
+        [{"role": "user", "content": "只回复OK"}],
+        thinking_profile=profile,
+    )
+
+    assert captured["json"]["enable_thinking"] is False
+    assert captured["json"]["max_tokens"] == 192
+
+
+
+def test_qwen_client_uses_high_budget_profile(monkeypatch):
+    captured: dict = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["json"] = json
+        return FakeResponse(
+            {
+                "choices": [{"message": {"content": "OK"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+        )
+
+    monkeypatch.setattr(qwen_client_module, "get_api_key", lambda: "test-key")
+    monkeypatch.setattr(qwen_client_module.requests, "post", fake_post)
+
+    client = QwenClient(_settings(), dry_run=False)
+    profile = qwen_client_module.ThinkingProfile(enabled=True, max_tokens=1024)
+
+    client.chat(
+        [{"role": "user", "content": "只回复OK"}],
+        thinking_profile=profile,
+    )
+
+    assert captured["json"]["enable_thinking"] is True
+    assert captured["json"]["max_tokens"] == 1024
 
 
 def test_qwen_client_falls_back_to_estimated_usage_when_usage_missing(monkeypatch):

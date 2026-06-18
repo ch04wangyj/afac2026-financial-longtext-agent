@@ -7,17 +7,39 @@ import pytest
 from agent.runtime.logicrag_config import load_logicrag_runtime_config
 
 
+CONFIG_PATH = Path("D:/pyproject/afac2026-financial-longtext-agent/configs/logicrag_runtime.yaml")
+
+
 def test_load_logicrag_runtime_config_reads_profiles_from_yaml():
-    config = load_logicrag_runtime_config(
-        Path("D:/pyproject/afac2026-financial-longtext-agent/configs/logicrag_runtime.yaml")
-    )
+    config = load_logicrag_runtime_config(CONFIG_PATH)
 
     assert config.qwen.model == "qwen3.7-plus"
     assert config.concurrency.question_workers == 15
     assert config.concurrency.qwen_workers == 8
     assert config.thinking_profiles["logicrag_planner"].enabled is True
     assert config.thinking_profiles["logicrag_planner"].max_tokens == 1024
-    assert config.thinking_profiles["option_judgement"].enabled is True
+    assert config.thinking_profiles["option_judgement"].enabled is False
+
+
+
+def test_runtime_config_exposes_step_specific_budget_defaults():
+    config = load_logicrag_runtime_config(CONFIG_PATH)
+
+    assert config.thinking_profiles["logicrag_planner"].enabled is True
+    assert config.thinking_profiles["logicrag_planner"].max_tokens == 1024
+    assert config.thinking_profiles["logicrag_final_compose"].enabled is True
+    assert config.thinking_profiles["logicrag_rank_summary"].max_tokens < config.thinking_profiles["logicrag_final_compose"].max_tokens
+    assert config.thinking_profiles["option_judgement"].enabled is False
+    assert config.thinking_profiles["option_judgement"].max_tokens <= 256
+
+
+
+def test_runtime_config_supports_multi_option_fallback_profile():
+    config = load_logicrag_runtime_config(CONFIG_PATH)
+
+    assert config.thinking_profiles["multi_option_fallback"].enabled is True
+    assert config.thinking_profiles["multi_option_fallback"].max_tokens == 512
+
 
 
 def test_load_logicrag_runtime_config_merges_env_overrides(monkeypatch: pytest.MonkeyPatch):
@@ -25,9 +47,7 @@ def test_load_logicrag_runtime_config_merges_env_overrides(monkeypatch: pytest.M
     monkeypatch.setenv("AFAC_LOGICRAG_QUESTION_WORKERS", "6")
     monkeypatch.setenv("AFAC_LOGICRAG_PROFILE_LOGICRAG_PLANNER_MAX_TOKENS", "2048")
 
-    config = load_logicrag_runtime_config(
-        Path("D:/pyproject/afac2026-financial-longtext-agent/configs/logicrag_runtime.yaml")
-    )
+    config = load_logicrag_runtime_config(CONFIG_PATH)
 
     assert config.qwen.model == "qwen3.7-max"
     assert config.concurrency.question_workers == 6
