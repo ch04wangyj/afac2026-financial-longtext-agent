@@ -11,6 +11,7 @@ from agent.reasoning.answer_parser import extract_json_object
 from agent.reasoning.solver import Solver
 from agent.runtime.logicrag_config import ABoardRuntimeConfig, ConcurrencyConfig, LogicRAGRuntimeConfig, LogicRAGSection, QwenRuntimeConfig, ThinkingProfile
 from agent.schemas import Question, RetrievalResult, TokenUsage
+from agent.domain.coverage_rules import expected_evidence_facets
 
 
 def build_thinking_profiles() -> dict[str, ThinkingProfile]:
@@ -329,6 +330,25 @@ class LogicRAGSolverTest(unittest.TestCase):
         self.assertIn("financial_metric_extraction", result.metadata)
         parsed = result.metadata["financial_metric_extraction"]
         self.assertEqual(parsed["metric_values"][0]["metric"], "营业收入")
+
+    def test_solver_metadata_includes_domain_coverage_facets_when_gate_enabled(self):
+        question = Question(
+            qid="facet_meta",
+            domain="financial_reports",
+            split="A",
+            question="比较比亚迪2024年和美的2025年营业收入与现金流。",
+            options={"A": "收入增长"},
+            answer_format="mcq",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(retrieval_strategy="hybrid", logicrag_enabled=False, enable_multi_option_judgement=False)
+        fake_llm = FakeStandardLLM(settings)
+        with patch("agent.reasoning.solver.load_logicrag_runtime_config", return_value=build_runtime_config(coverage_gate_enabled=True)):
+            solver = Solver(FakeLogicRetriever(), RuleEvidenceCompressor(max_chars=1200, top_k=3), fake_llm)
+
+        result = solver.solve(question)
+
+        self.assertEqual(result.metadata["domain_coverage_facets"], expected_evidence_facets("financial_reports", question.question))
 
 
 class FakeLogicRetriever:

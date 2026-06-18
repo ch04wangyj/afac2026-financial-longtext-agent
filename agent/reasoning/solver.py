@@ -18,6 +18,7 @@ from agent.reasoning.prompts import (
 )
 from agent.runtime.logicrag_config import load_logicrag_runtime_config
 from agent.runtime.parallel import parallel_map_ordered
+from agent.domain.coverage_rules import expected_evidence_facets
 from agent.retrieve.coverage import assess_doc_coverage, retrieve_missing_doc_evidence
 from agent.retrieve.option_retrieval import retrieve_option_candidates
 from agent.retrieve.retriever import Retriever
@@ -73,6 +74,7 @@ class Solver:
                 "reasoning": response.reasoning,
                 "coverage_report": coverage_report,
                 "financial_metric_extraction": financial_metric_extraction,
+                "domain_coverage_facets": expected_evidence_facets(question.domain, question.question) if coverage_report or self.runtime.a_board.coverage_gate_enabled else [],
             },
         )
 
@@ -164,6 +166,7 @@ class Solver:
                 "plan_token_usage": plan_response.usage.to_dict(),
                 "rank_memories": rank_memories,
                 "coverage_report": coverage_report,
+                "domain_coverage_facets": expected_evidence_facets(question.domain, question.question) if coverage_report or self.runtime.a_board.coverage_gate_enabled else [],
             },
         )
 
@@ -243,6 +246,7 @@ class Solver:
                 "option_verdicts": {key: verdict.to_dict() for key, verdict in verdicts.items()},
                 "option_coverage": option_coverage,
                 "coverage_report": coverage_report,
+                "domain_coverage_facets": expected_evidence_facets(question.domain, question.question) if coverage_report or self.runtime.a_board.coverage_gate_enabled else [],
                 "fallback": fallback_record,
             },
         )
@@ -348,6 +352,7 @@ class Solver:
                 "strategy": "multi_option_judgement",
                 "option_judgements": option_records,
                 "coverage_report": coverage_report,
+                "domain_coverage_facets": expected_evidence_facets(question.domain, question.question) if coverage_report or self.runtime.a_board.coverage_gate_enabled else [],
                 "fallback": fallback_record,
             },
         )
