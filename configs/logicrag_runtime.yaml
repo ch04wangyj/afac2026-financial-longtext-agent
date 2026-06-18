@@ -36,3 +36,13 @@ concurrency:
   qwen_workers: 8
   qwen_request_limit: 1000
   bm25_workers: 8
+
+a_board:
+  option_matrix_enabled: false
+  coverage_gate_enabled: false
+  force_doc_coverage_for_a_board: true
+  use_doc_ids_as_hint_only: false
+  financial_calculator_enabled: false
+  max_option_candidates: 12
+  max_verifier_candidates_per_option: 6
+  low_confidence_threshold: 0.65

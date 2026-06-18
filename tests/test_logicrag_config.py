@@ -52,3 +52,14 @@ def test_load_logicrag_runtime_config_merges_env_overrides(monkeypatch: pytest.M
     assert config.qwen.model == "qwen3.7-max"
     assert config.concurrency.question_workers == 6
     assert config.thinking_profiles["logicrag_planner"].max_tokens == 2048
+
+
+
+def test_runtime_config_exposes_a_board_quality_flags():
+    config = load_logicrag_runtime_config(CONFIG_PATH)
+
+    assert config.a_board.option_matrix_enabled is False
+    assert config.a_board.coverage_gate_enabled is False
+    assert config.a_board.force_doc_coverage_for_a_board is True
+    assert config.a_board.use_doc_ids_as_hint_only is False
+    assert config.a_board.financial_calculator_enabled is False

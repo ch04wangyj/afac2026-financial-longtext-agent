@@ -43,6 +43,20 @@ class LogicRAGSection:
 
 
 @dataclass(frozen=True)
+class ABoardRuntimeConfig:
+    """A 榜质量模式参数。"""
+
+    option_matrix_enabled: bool = False
+    coverage_gate_enabled: bool = False
+    force_doc_coverage_for_a_board: bool = True
+    use_doc_ids_as_hint_only: bool = False
+    financial_calculator_enabled: bool = False
+    max_option_candidates: int = 12
+    max_verifier_candidates_per_option: int = 6
+    low_confidence_threshold: float = 0.65
+
+
+@dataclass(frozen=True)
 class ConcurrencyConfig:
     """并发执行参数。"""
 
@@ -59,6 +73,7 @@ class LogicRAGRuntimeConfig:
     qwen: QwenRuntimeConfig = field(default_factory=QwenRuntimeConfig)
     thinking_profiles: dict[str, ThinkingProfile] = field(default_factory=dict)
     logicrag: LogicRAGSection = field(default_factory=LogicRAGSection)
+    a_board: ABoardRuntimeConfig = field(default_factory=ABoardRuntimeConfig)
     concurrency: ConcurrencyConfig = field(default_factory=ConcurrencyConfig)
     source_path: Path = DEFAULT_CONFIG_PATH
 
@@ -96,6 +111,43 @@ def load_logicrag_runtime_config(path: Path | None = None) -> LogicRAGRuntimeCon
         bm25_workers=int((raw.get("concurrency") or {}).get("bm25_workers", ConcurrencyConfig.bm25_workers)),
     )
 
+    a_board = ABoardRuntimeConfig(
+        option_matrix_enabled=_as_bool(
+            (raw.get("a_board") or {}).get("option_matrix_enabled", ABoardRuntimeConfig.option_matrix_enabled)
+        ),
+        coverage_gate_enabled=_as_bool(
+            (raw.get("a_board") or {}).get("coverage_gate_enabled", ABoardRuntimeConfig.coverage_gate_enabled)
+        ),
+        force_doc_coverage_for_a_board=_as_bool(
+            (raw.get("a_board") or {}).get(
+                "force_doc_coverage_for_a_board", ABoardRuntimeConfig.force_doc_coverage_for_a_board
+            )
+        ),
+        use_doc_ids_as_hint_only=_as_bool(
+            (raw.get("a_board") or {}).get(
+                "use_doc_ids_as_hint_only", ABoardRuntimeConfig.use_doc_ids_as_hint_only
+            )
+        ),
+        financial_calculator_enabled=_as_bool(
+            (raw.get("a_board") or {}).get(
+                "financial_calculator_enabled", ABoardRuntimeConfig.financial_calculator_enabled
+            )
+        ),
+        max_option_candidates=int(
+            (raw.get("a_board") or {}).get("max_option_candidates", ABoardRuntimeConfig.max_option_candidates)
+        ),
+        max_verifier_candidates_per_option=int(
+            (raw.get("a_board") or {}).get(
+                "max_verifier_candidates_per_option", ABoardRuntimeConfig.max_verifier_candidates_per_option
+            )
+        ),
+        low_confidence_threshold=float(
+            (raw.get("a_board") or {}).get(
+                "low_confidence_threshold", ABoardRuntimeConfig.low_confidence_threshold
+            )
+        ),
+    )
+
     thinking_profiles = {
         name: ThinkingProfile(
             enabled=_as_bool((data or {}).get("enabled", ThinkingProfile.enabled)),
@@ -109,6 +161,7 @@ def load_logicrag_runtime_config(path: Path | None = None) -> LogicRAGRuntimeCon
         qwen=qwen,
         thinking_profiles=thinking_profiles,
         logicrag=logicrag,
+        a_board=a_board,
         concurrency=concurrency,
         source_path=config_path,
     )
@@ -152,6 +205,41 @@ def _apply_env_overrides(config: LogicRAGRuntimeConfig) -> LogicRAGRuntimeConfig
         rank_top_k=int(os.getenv("AFAC_LOGICRAG_RANK_TOP_K", str(config.logicrag.rank_top_k))),
         memory_chars=int(os.getenv("AFAC_LOGICRAG_MEMORY_CHARS", str(config.logicrag.memory_chars))),
     )
+    a_board = ABoardRuntimeConfig(
+        option_matrix_enabled=_as_bool(
+            os.getenv("AFAC_A_BOARD_OPTION_MATRIX_ENABLED", str(config.a_board.option_matrix_enabled))
+        ),
+        coverage_gate_enabled=_as_bool(
+            os.getenv("AFAC_A_BOARD_COVERAGE_GATE_ENABLED", str(config.a_board.coverage_gate_enabled))
+        ),
+        force_doc_coverage_for_a_board=_as_bool(
+            os.getenv(
+                "AFAC_A_BOARD_FORCE_DOC_COVERAGE_FOR_A_BOARD",
+                str(config.a_board.force_doc_coverage_for_a_board),
+            )
+        ),
+        use_doc_ids_as_hint_only=_as_bool(
+            os.getenv("AFAC_A_BOARD_USE_DOC_IDS_AS_HINT_ONLY", str(config.a_board.use_doc_ids_as_hint_only))
+        ),
+        financial_calculator_enabled=_as_bool(
+            os.getenv(
+                "AFAC_A_BOARD_FINANCIAL_CALCULATOR_ENABLED",
+                str(config.a_board.financial_calculator_enabled),
+            )
+        ),
+        max_option_candidates=int(
+            os.getenv("AFAC_A_BOARD_MAX_OPTION_CANDIDATES", str(config.a_board.max_option_candidates))
+        ),
+        max_verifier_candidates_per_option=int(
+            os.getenv(
+                "AFAC_A_BOARD_MAX_VERIFIER_CANDIDATES_PER_OPTION",
+                str(config.a_board.max_verifier_candidates_per_option),
+            )
+        ),
+        low_confidence_threshold=float(
+            os.getenv("AFAC_A_BOARD_LOW_CONFIDENCE_THRESHOLD", str(config.a_board.low_confidence_threshold))
+        ),
+    )
     concurrency = ConcurrencyConfig(
         question_workers=int(os.getenv("AFAC_LOGICRAG_QUESTION_WORKERS", str(config.concurrency.question_workers))),
         qwen_workers=int(os.getenv("AFAC_LOGICRAG_QWEN_WORKERS", str(config.concurrency.qwen_workers))),
@@ -172,6 +260,7 @@ def _apply_env_overrides(config: LogicRAGRuntimeConfig) -> LogicRAGRuntimeConfig
         qwen=qwen,
         thinking_profiles=profiles,
         logicrag=logicrag,
+        a_board=a_board,
         concurrency=concurrency,
         source_path=config.source_path,
     )
