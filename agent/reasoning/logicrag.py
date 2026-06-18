@@ -88,7 +88,7 @@ def plan_logic_subproblems_with_qwen(
         messages,
         temperature=0.0,
         max_tokens=llm.settings.logicrag_plan_max_tokens,
-        enable_thinking=False,
+        enable_thinking=True,
     )
     try:
         plan = parse_logic_plan(response.text, max_subproblems=max_subproblems, max_ranks=max_ranks)
@@ -250,7 +250,7 @@ def summarize_rank_memory_with_qwen(
         messages,
         temperature=0.0,
         max_tokens=llm.settings.logicrag_summary_max_tokens,
-        enable_thinking=False,
+        enable_thinking=True,
     )
     text = " ".join((response.text or "").split())
     if max_chars > 0:

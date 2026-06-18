@@ -9,6 +9,7 @@ import argparse
 import random
 import sys
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,7 +20,8 @@ from agent.config import Settings
 from agent.data.questions import load_questions
 from agent.index.bm25 import BM25SearchIndex
 from agent.index.document_index import DocumentSearchIndex
-from agent.io.jsonl import append_jsonl, read_jsonl, write_json, write_jsonl
+from agent.io.jsonl import read_jsonl, write_json, write_jsonl
+from agent.io.output_layout import choose_output_dir
 from agent.llm.qwen_client import QwenClient
 from agent.reasoning.solver import Solver
 from agent.retrieve.retriever import Retriever
@@ -44,6 +46,16 @@ def main() -> None:
     sample = select_by_qids(questions, args.qids) if args.qids else select_stratified_sample(
         questions, args.sample_size, args.per_domain, rng
     )
+    run_scope = "a100" if len(sample) == 100 else "sample"
+    run_name = "full100" if run_scope == "a100" else f"sample{len(sample)}"
+    run_dir = choose_output_dir(
+        settings,
+        run_scope=run_scope,
+        run_name=run_name,
+        strategy=settings.retrieval_strategy,
+        dry_run=args.dry_run,
+        resume=args.resume,
+    )
 
     manifest = [
         {
@@ -55,31 +67,39 @@ def main() -> None:
         }
         for question in sample
     ]
-    write_json(settings.outputs_dir / "sample_manifest.json", manifest)
+    write_json(run_dir / "sample_manifest.json", manifest)
 
     solver = _build_solver(settings, dry_run=args.dry_run)
-    out_path = settings.outputs_dir / "answer_results.jsonl"
+    out_path = run_dir / "answer_results.jsonl"
     existing_by_qid = _load_existing_results(out_path) if args.resume else {}
     if not args.resume and out_path.exists():
         out_path.unlink()
 
     rows = []
-    for idx, question in enumerate(sample, start=1):
-        if question.qid in existing_by_qid:
-            print(
-                f"[{idx}/{len(sample)}] skip {question.domain}/{question.qid}/{question.answer_format} from checkpoint",
-                flush=True,
-            )
-            rows.append(existing_by_qid[question.qid])
-            continue
+    todo_questions = [question for question in sample if question.qid not in existing_by_qid]
+    if existing_by_qid:
+        for idx, question in enumerate(sample, start=1):
+            if question.qid in existing_by_qid:
+                print(
+                    f"[{idx}/{len(sample)}] skip {question.domain}/{question.qid}/{question.answer_format} from checkpoint",
+                    flush=True,
+                )
+                rows.append(existing_by_qid[question.qid])
 
-        print(f"[{idx}/{len(sample)}] solving {question.domain}/{question.qid}/{question.answer_format}", flush=True)
-        row = solver.solve(question).to_dict()
-        rows.append(row)
-        append_jsonl(out_path, row)
+    def solve_question(question):
+        print(f"[{question.domain}/{question.qid}/{question.answer_format}] solving", flush=True)
+        return question.qid, solver.solve(question).to_dict()
 
-    write_jsonl(settings.outputs_dir / "answer_results.jsonl", rows)
-    print(f"wrote {len(rows)} sampled results -> {settings.outputs_dir}", flush=True)
+    with ThreadPoolExecutor(max_workers=settings.question_workers) as executor:
+        futures = {executor.submit(solve_question, question): question.qid for question in todo_questions}
+        pending = []
+        for future in as_completed(futures):
+            pending.append(future.result())
+
+    solved_by_qid = {qid: row for qid, row in pending}
+    rows.extend(solved_by_qid[question.qid] for question in todo_questions)
+    write_jsonl(out_path, rows)
+    print(f"wrote {len(rows)} sampled results -> {run_dir}", flush=True)
 
 
 def select_stratified_sample(questions, sample_size: int, per_domain: int, rng: random.Random):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,10 +15,12 @@ from agent.config import Settings
 from agent.data.questions import load_questions
 from agent.index.bm25 import BM25SearchIndex
 from agent.index.document_index import DocumentSearchIndex
-from agent.io.jsonl import append_jsonl, read_jsonl, write_jsonl
+from agent.io.jsonl import read_jsonl, write_jsonl
+from agent.io.output_layout import choose_output_dir
 from agent.llm.qwen_client import QwenClient
 from agent.reasoning.solver import Solver
 from agent.retrieve.retriever import Retriever
+from agent.runtime.parallel import parallel_map_ordered
 
 
 def main() -> None:
@@ -36,6 +39,18 @@ def main() -> None:
     if args.limit:
         questions = questions[: args.limit]
 
+    is_full_a100 = not args.dry_run and not args.limit and args.domains is None and len(questions) == 100
+    run_scope = "a100" if is_full_a100 else "test"
+    run_name = "full100" if is_full_a100 else _test_run_name(args.limit, args.domains)
+    run_dir = choose_output_dir(
+        settings,
+        run_scope=run_scope,
+        run_name=run_name,
+        strategy=settings.retrieval_strategy,
+        dry_run=args.dry_run,
+        resume=args.resume,
+    )
+
     index_path = args.index or settings.index_dir / "bm25_index.pkl"
     index = BM25SearchIndex.load(index_path)
     doc_index_path = settings.index_dir / "document_bm25_index.pkl"
@@ -52,27 +67,41 @@ def main() -> None:
     llm = QwenClient(settings, dry_run=args.dry_run)
     solver = Solver(retriever, compressor, llm)
 
-    out_path = settings.outputs_dir / "answer_results.jsonl"
+    out_path = run_dir / "answer_results.jsonl"
     existing_by_qid = _load_existing_results(out_path) if args.resume else {}
     if not args.resume and out_path.exists():
         out_path.unlink()
 
-    results = []
-    for idx, question in enumerate(questions, start=1):
-        if question.qid in existing_by_qid:
-            print(f"[{idx}/{len(questions)}] skip {question.qid} from checkpoint", flush=True)
-            results.append(existing_by_qid[question.qid])
-            continue
+    rows = []
+    todo_questions = [question for question in questions if question.qid not in existing_by_qid]
+    if existing_by_qid:
+        for idx, question in enumerate(questions, start=1):
+            if question.qid in existing_by_qid:
+                print(f"[{idx}/{len(questions)}] skip {question.qid} from checkpoint", flush=True)
+                rows.append(existing_by_qid[question.qid])
 
-        # 每题即时打印进度，真实 API 调用时便于观察是否卡住。
-        print(f"[{idx}/{len(questions)}] solving {question.qid}", flush=True)
-        row = solver.solve(question).to_dict()
-        results.append(row)
-        append_jsonl(out_path, row)
+    def solve_question(question):
+        print(f"solving {question.qid}", flush=True)
+        return question.qid, solver.solve(question).to_dict()
 
-    # 最终重写一次，保证 JSONL 顺序和本次题目顺序一致。
-    write_jsonl(out_path, results)
-    print(f"wrote {len(results)} answer results -> {out_path}", flush=True)
+    with ThreadPoolExecutor(max_workers=settings.question_workers) as executor:
+        futures = {executor.submit(solve_question, question): question.qid for question in todo_questions}
+        pending = []
+        for future in as_completed(futures):
+            pending.append(future.result())
+
+    solved_by_qid = {qid: row for qid, row in pending}
+    rows.extend(solved_by_qid[question.qid] for question in todo_questions)
+    write_jsonl(out_path, rows)
+    print(f"wrote {len(rows)} answer results -> {out_path}", flush=True)
+
+
+def _test_run_name(limit: int, domains: list[str] | None) -> str:
+    if limit:
+        return f"run_questions_limit{limit}"
+    if domains:
+        return "run_questions_" + "_".join(domains)
+    return "run_questions"
 
 
 def _load_existing_results(path: Path) -> dict[str, dict]:

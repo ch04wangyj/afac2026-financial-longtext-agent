@@ -48,13 +48,27 @@ python scripts\06_smoke_by_domain.py --dry-run --per-domain 1
 python scripts\06_smoke_by_domain.py --per-domain 1
 ```
 
+默认输出会进入：
+
+```text
+outputs/tests/smoke/dry/<timestamp>_<strategy>/
+outputs/tests/smoke/live/<timestamp>_<strategy>/
+```
+
 分层抽样 20 题并生成诊断报告：
 
 ```powershell
 python scripts\07_run_sample.py --dry-run --sample-size 20 --per-domain 4 --seed 20260609
 python scripts\07_run_sample.py --sample-size 20 --per-domain 4 --seed 20260609
-python scripts\04_make_submission.py
-python scripts\08_report_results.py
+python scripts\04_make_submission.py --results outputs\samples\sample20\live\<timestamp>_<strategy>\answer_results.jsonl
+python scripts\08_report_results.py --results outputs\samples\sample20\live\<timestamp>_<strategy>\answer_results.jsonl
+```
+
+默认输出会进入：
+
+```text
+outputs/samples/sample20/dry/<timestamp>_<strategy>/
+outputs/samples/sample20/live/<timestamp>_<strategy>/
 ```
 
 长任务中断后可续跑：
@@ -107,15 +121,15 @@ outputs/rag_compare_logicrag_qwen_finance/report.md
 ```powershell
 AFAC_LOGICRAG_ENABLED=true AFAC_RETRIEVAL_STRATEGY=logicrag_agent python scripts\06_smoke_by_domain.py --dry-run --per-domain 1
 AFAC_LOGICRAG_ENABLED=true AFAC_RETRIEVAL_STRATEGY=logicrag_agent python scripts\07_run_sample.py --sample-size 20 --per-domain 4 --seed 20260616
-python scripts\09_compare_runs.py --baseline outputs/sample20_baseline/answer_results.jsonl --candidate outputs/sample20_logicrag/answer_results.jsonl --output outputs/compare_sample20_baseline_vs_logicrag/comparison.md
+python scripts\09_compare_runs.py --baseline outputs\samples\sample20\live\<baseline_stamp>_<baseline_strategy>\answer_results.jsonl --candidate outputs\samples\sample20\live\<candidate_stamp>_<candidate_strategy>\answer_results.jsonl
 ```
 
 常见输出：
 
 ```text
-outputs/smoke_logicrag_dry/answer_results.jsonl
-outputs/sample20_logicrag/run_report.md
-outputs/compare_sample20_baseline_vs_logicrag/comparison.md
+outputs/tests/smoke/dry/<timestamp>_logicrag_agent/answer_results.jsonl
+outputs/samples/sample20/live/<timestamp>_logicrag_agent/run_report.md
+outputs/samples/compare/<baseline>__vs__<candidate>/comparison.md
 ```
 
 ### 3) 推荐使用顺序
@@ -133,18 +147,30 @@ theory/AFAC2026_赛题四_RAG横向评估与代码Review.md
 theory/AFAC2026_赛题四_RAG框架扩展路线图.md
 ```
 
-## Outputs
+## Outputs Layout
 
 - `processed_data/documents.jsonl`: 解析后的文档。
 - `processed_data/chunks.jsonl`: 分块后的证据块。
 - `processed_data/indexes/bm25_index.pkl`: 词法索引。
 - `processed_data/indexes/document_bm25_index.pkl`: B 榜盲搜用文档级词法索引。
-- `outputs/answer_results.jsonl`: 每题答案、证据和 Token。
-- `outputs/answer.csv`: 比赛提交文件。
-- `outputs/evidence.json`: 可审计证据。
-- `outputs/token_usage.json`: 汇总 Token。
-- `outputs/rag_compare/`: 不同 RAG/tokenizer 方案的检索命中横向比较。
-- `outputs/run_report.md`: 抽样运行后的 Token、证据覆盖和格式风险诊断。
+- `outputs/tests/smoke/...`: smoke / dry-run / 小规模验证输出。
+- `outputs/tests/retrieval_compare/...`: `scripts/05_compare_rag.py` 的检索对比输出。
+- `outputs/samples/sample20/...`: sample20 评估输出。
+- `outputs/samples/sample40/...`: 其他 sample 规模输出。
+- `outputs/samples/compare/...`: 样本运行之间的对比报告。
+- `outputs/a100/full100/live/...`: A 榜 100 题正式运行输出。
+- `outputs/a100/compare/...`: A100 运行对比报告。
+
+提交与诊断产物会默认贴靠 `answer_results.jsonl` 所在目录共同落盘：
+
+- `answer_results.jsonl`
+- `answer.csv`
+- `evidence.json`
+- `token_usage.json`
+- `run_report.md`
+- `run_report.json`
+
+完整规范见：`docs/output-layout.md`
 
 ## Historical Note (Not a Valid Current Baseline)
 
@@ -187,6 +213,7 @@ outputs/a_full_adaptive/run_report.md
 - `.env`、`processed_data/`、`outputs/` 不提交。
 - 所有 Qwen 调用必须记录 usage。
 - `03/06/07` 运行脚本已支持逐题 checkpoint 和 `--resume`，全量 A 组真实调用建议始终指定独立 `AFAC_OUTPUTS_DIR`。
+- 如需清理历史无用输出，先执行 `python scripts/10_cleanup_outputs.py --dry-run`，确认后再执行 `--apply`。
 - 默认模型为 `qwen3.7-plus`，可切换到 `qwen3.7-max`；使用百炼 OpenAI-compatible API 和流式输出，并尽量通过 `stream_options.include_usage` 获取真实 Token。
 - 为控制 Token，普通答题和逐选项判断默认覆盖为 `enable_thinking=false`；低置信复核时再显式打开 thinking 或切换 max。
 - 逐选项判断使用独立证据预算：默认 `AFAC_OPTION_TOP_K_EVIDENCE=6`、`AFAC_OPTION_EVIDENCE_CHARS=5000`；研报自动提升到 full 预算，避免遗漏长文档趋势证据。

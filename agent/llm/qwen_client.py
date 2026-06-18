@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import requests
 
 from agent.config import Settings, get_api_key
+from agent.runtime.parallel import acquire_named_permit, acquire_named_quota, track_active
 from agent.schemas import TokenUsage
 
 
@@ -63,15 +64,18 @@ class QwenClient:
                     "max_tokens": max_tokens,
                     "enable_thinking": thinking,
                 }
-                response = requests.post(
-                    url,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                    timeout=self.settings.request_timeout_seconds,
-                )
+                with acquire_named_quota("qwen", self.settings.qwen_request_limit), acquire_named_permit(
+                    "qwen", self.settings.qwen_workers
+                ), track_active("qwen"):
+                    response = requests.post(
+                        url,
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                        timeout=self.settings.request_timeout_seconds,
+                    )
                 response.raise_for_status()
                 data = response.json()
                 message = ((data.get("choices") or [{}])[0].get("message") or {})

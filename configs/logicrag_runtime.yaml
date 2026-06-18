@@ -1,0 +1,35 @@
+qwen:
+  model: qwen3.7-plus
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  request_timeout_seconds: 120
+  max_retries: 2
+
+thinking_profiles:
+  answer_single_pass:
+    enabled: true
+    max_tokens: 768
+  logicrag_planner:
+    enabled: true
+    max_tokens: 1024
+  logicrag_rank_summary:
+    enabled: true
+    max_tokens: 768
+  logicrag_final_compose:
+    enabled: true
+    max_tokens: 1024
+  option_judgement:
+    enabled: true
+    max_tokens: 512
+
+logicrag:
+  enabled: true
+  max_subproblems: 6
+  max_ranks: 4
+  rank_top_k: 12
+  memory_chars: 4500
+
+concurrency:
+  question_workers: 15
+  qwen_workers: 8
+  qwen_request_limit: 1000
+  bm25_workers: 8

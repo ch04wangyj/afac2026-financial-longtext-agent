@@ -13,6 +13,8 @@ from agent.reasoning.prompts import (
     build_logicrag_final_compose_messages,
     build_option_judgement_messages,
 )
+from agent.runtime.logicrag_config import load_logicrag_runtime_config
+from agent.runtime.parallel import parallel_map_ordered
 from agent.retrieve.retriever import Retriever
 from agent.schemas import AnswerResult, Question, RetrievalResult, TokenUsage
 
@@ -25,6 +27,7 @@ class Solver:
         self.compressor = compressor
         self.llm = llm
         self.option_compressors: dict[str, RuleEvidenceCompressor] = {}
+        self.runtime = load_logicrag_runtime_config()
 
     def solve(self, question: Question) -> AnswerResult:
         """处理一道题并返回可提交答案与可审计证据。"""
@@ -40,7 +43,7 @@ class Solver:
             messages,
             temperature=0.0,
             max_tokens=self.llm.settings.answer_max_tokens,
-            enable_thinking=self.llm.settings.answer_enable_thinking,
+            enable_thinking=True,
         )
         answer = parse_answer(response.text, question.answer_format)
         confidence = _extract_confidence(response.text)
@@ -81,15 +84,20 @@ class Solver:
 
         for group in rank_groups:
             rank_queries = logicrag.build_rankwise_queries_for_group(question, group, prior_memories=rank_memories)
-            ranked_lists = [
-                self.retriever.index.search(
+
+            def run_query(query: str) -> list[RetrievalResult]:
+                return self.retriever.index.search(
                     query=query,
                     top_k=max(1, min(self.retriever.top_k_per_query, self.llm.settings.logicrag_rank_top_k)),
                     filter_doc_ids=filter_doc_ids,
                     source=f"logicrag_agent_rank_{group['rank']}",
                 )
-                for query in rank_queries
-            ]
+
+            ranked_lists = parallel_map_ordered(
+                rank_queries,
+                run_query,
+                max_workers=self.runtime.concurrency.bm25_workers,
+            )
             rank_results = logicrag.reciprocal_rank_fusion(ranked_lists, top_k=self.llm.settings.logicrag_rank_top_k)
             for item in rank_results:
                 if item.chunk_id not in seen_chunks:
@@ -119,7 +127,7 @@ class Solver:
             messages,
             temperature=0.0,
             max_tokens=self.llm.settings.answer_max_tokens,
-            enable_thinking=self.llm.settings.answer_enable_thinking,
+            enable_thinking=True,
         )
         total_usage.add(response.usage)
 
@@ -154,7 +162,10 @@ class Solver:
         seen_chunks: set[str] = set()
         total_usage = TokenUsage()
 
-        for option_key, option_text in sorted(question.options.items()):
+        option_items = list(sorted(question.options.items()))
+
+        def judge_option(item: tuple[str, str]) -> dict:
+            option_key, option_text = item
             option_question = Question(
                 qid=f"{question.qid}:{option_key}",
                 domain=question.domain,
@@ -172,25 +183,44 @@ class Solver:
                 messages,
                 temperature=0.0,
                 max_tokens=self.llm.settings.option_judgement_max_tokens,
-                enable_thinking=self.llm.settings.option_judgement_enable_thinking,
+                enable_thinking=True,
             )
-            verdict = parse_verdict(response.text)
-            confidence = _extract_confidence(response.text)
-            total_usage.add(response.usage)
+            return {
+                "option": option_key,
+                "verdict": parse_verdict(response.text),
+                "confidence": _extract_confidence(response.text),
+                "token_usage": response.usage,
+                "raw_response": response.text,
+                "reasoning": response.reasoning,
+                "evidence": evidence,
+            }
+
+        judged = parallel_map_ordered(
+            option_items,
+            judge_option,
+            max_workers=min(self.runtime.concurrency.qwen_workers, max(1, len(option_items))),
+        )
+
+        for record in judged:
+            verdict = record["verdict"]
+            confidence = record["confidence"]
+            usage = record["token_usage"]
+            evidence = record["evidence"]
+            total_usage.add(usage)
             if verdict is True:
-                accepted.append(option_key)
+                accepted.append(record["option"])
             for item in evidence:
                 if item.chunk_id not in seen_chunks:
                     all_evidence.append(item)
                     seen_chunks.add(item.chunk_id)
             option_records.append(
                 {
-                    "option": option_key,
+                    "option": record["option"],
                     "verdict": verdict,
                     "confidence": confidence,
-                    "token_usage": response.usage.to_dict(),
-                    "raw_response": response.text,
-                    "reasoning": response.reasoning,
+                    "token_usage": usage.to_dict(),
+                    "raw_response": record["raw_response"],
+                    "reasoning": record["reasoning"],
                     "evidence_doc_ids": [item.doc_id for item in evidence],
                 }
             )
@@ -241,7 +271,7 @@ class Solver:
             messages,
             temperature=0.0,
             max_tokens=self.llm.settings.answer_max_tokens,
-            enable_thinking=self.llm.settings.answer_enable_thinking,
+            enable_thinking=True,
         )
         total_usage.add(response.usage)
         for item in evidence:

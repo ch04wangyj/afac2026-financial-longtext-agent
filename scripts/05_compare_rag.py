@@ -15,6 +15,7 @@ from agent.data.questions import load_questions
 from agent.index.bm25 import BM25SearchIndex
 from agent.index.build import load_chunks
 from agent.io.jsonl import write_json
+from agent.io.output_layout import choose_output_dir
 from agent.retrieve.metrics import evaluate_retrieval, summarize_metrics
 from agent.retrieve.variants import RAG_VARIANTS, retrieve_with_variant
 
@@ -62,7 +63,14 @@ def main() -> None:
                 detail_rows.append(metric.to_dict())
 
     summary_rows = summarize_metrics(metric_rows)
-    out_dir = settings.outputs_dir / args.output_name
+    out_dir = choose_output_dir(
+        settings,
+        run_scope="test",
+        run_name="retrieval_compare",
+        strategy=args.output_name,
+        dry_run=False,
+        explicit_dir=(settings.outputs_dir / args.output_name) if settings.has_explicit_outputs_dir else None,
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(out_dir / "detail.csv", detail_rows)
     _write_csv(out_dir / "summary.csv", summary_rows)

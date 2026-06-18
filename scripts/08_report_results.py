@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from agent.config import Settings
 from agent.io.jsonl import write_json
+from agent.io.output_layout import infer_artifact_dir_from_results
 
 
 def main() -> None:
@@ -26,7 +27,7 @@ def main() -> None:
     settings = Settings.from_env()
     results_path = args.results or settings.outputs_dir / "answer_results.jsonl"
     manifest_path = args.manifest or settings.outputs_dir / "sample_manifest.json"
-    output_path = args.output or settings.outputs_dir / "run_report.md"
+    output_path = args.output or infer_artifact_dir_from_results(results_path) / "run_report.md"
 
     rows = [json.loads(line) for line in results_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     manifest = _load_manifest(manifest_path)

@@ -149,6 +149,46 @@ class LogicRAGSolverTest(unittest.TestCase):
         self.assertEqual(queries[:2], ["Q1", "Q2"])
         self.assertEqual(sum("上游记忆锚点" in query for query in queries), 1)
 
+    def test_logicrag_agent_enables_thinking_for_every_qwen_call(self):
+        question = Question(
+            qid="q_logicrag",
+            domain="regulatory",
+            split="A",
+            question="根据客户尽职调查要求，银行是否必须识别受益所有人并保存身份资料？",
+            options={
+                "A": "不需要识别受益所有人",
+                "B": "需要识别受益所有人并保存身份资料",
+            },
+            answer_format="mcq",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(
+            retrieval_strategy="logicrag_agent",
+            logicrag_enabled=True,
+            logicrag_max_subproblems=4,
+            logicrag_max_ranks=3,
+            logicrag_rank_top_k=2,
+            logicrag_memory_chars=800,
+            logicrag_plan_max_tokens=256,
+            logicrag_summary_max_tokens=128,
+            answer_max_tokens=128,
+        )
+        fake_llm = FakeLogicLLM(settings)
+        solver = Solver(
+            FakeLogicRetriever(),
+            RuleEvidenceCompressor(max_chars=1200, top_k=3),
+            fake_llm,
+        )
+
+        solver.solve(question)
+
+        self.assertGreaterEqual(len(fake_llm.calls), 3)
+        self.assertTrue(all(call["enable_thinking"] is True for call in fake_llm.calls))
+        self.assertEqual(
+            [call["max_tokens"] for call in fake_llm.calls],
+            [256, 128, 128, 128],
+        )
+
 
 class FakeLogicRetriever:
     def __init__(self) -> None:
@@ -200,8 +240,10 @@ class FakeIndex:
 class FakeLogicLLM:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.calls = []
 
     def chat(self, messages, temperature=0.0, max_tokens=0, enable_thinking=None):
+        self.calls.append({"max_tokens": max_tokens, "enable_thinking": enable_thinking})
         prompt = "\n".join(message.get("content", "") for message in messages)
         if "LogicRAG规划器" in prompt:
             return LLMResponse(

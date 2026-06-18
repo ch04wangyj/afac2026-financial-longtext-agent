@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent.runtime.logicrag_config import load_logicrag_runtime_config
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -28,20 +30,26 @@ def _local_value(name: str) -> str | None:
     return str(value) if value not in (None, "") else None
 
 
+def _raw_value(name: str) -> str | None:
+    """读取环境变量或 local_settings 原始值；空串视为未配置。"""
+    value = os.getenv(name) or _local_value(name)
+    return value if value not in (None, "") else None
+
+
 def _setting(name: str, default: str) -> str:
     """读取普通字符串配置，优先级：环境变量 > local_settings > 默认值。"""
-    return os.getenv(name) or _local_value(name) or default
+    return _raw_value(name) or default
 
 
 def _env_path(name: str, default: Path) -> Path:
     """读取路径配置，并统一展开为绝对路径，避免脚本工作目录变化导致路径漂移。"""
-    value = os.getenv(name) or _local_value(name)
+    value = _raw_value(name)
     return Path(value).expanduser().resolve() if value else default
 
 
 def _env_bool(name: str, default: bool) -> bool:
     """读取布尔配置，支持常见的 true/yes/on 写法。"""
-    value = os.getenv(name) or _local_value(name)
+    value = _raw_value(name)
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
@@ -57,6 +65,7 @@ class Settings:
     questions_root: Path = PROJECT_ROOT / "public_dataset_a" / "public_dataset_upload" / "questions" / "group_a"
     processed_dir: Path = PROJECT_ROOT / "processed_data"
     outputs_dir: Path = PROJECT_ROOT / "outputs"
+    has_explicit_outputs_dir: bool = False
     index_dir: Path = PROJECT_ROOT / "processed_data" / "indexes"
     qwen_model: str = "qwen3.7-plus"
     qwen_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -82,19 +91,26 @@ class Settings:
     logicrag_summary_max_tokens: int = 384
     request_timeout_seconds: int = 120
     max_retries: int = 2
+    question_workers: int = 15
+    qwen_workers: int = 8
+    qwen_request_limit: int = 100
+    bm25_workers: int = 8
 
     @classmethod
     def from_env(cls) -> "Settings":
         """从环境变量和本地私有配置构造 Settings。"""
+        runtime = load_logicrag_runtime_config()
+        raw_outputs_dir = _raw_value("AFAC_OUTPUTS_DIR")
         return cls(
             dataset_root=_env_path("AFAC_DATASET_ROOT", cls.dataset_root),
             raw_root=_env_path("AFAC_RAW_ROOT", cls.raw_root),
             questions_root=_env_path("AFAC_QUESTIONS_ROOT", cls.questions_root),
             processed_dir=_env_path("AFAC_PROCESSED_DIR", cls.processed_dir),
             outputs_dir=_env_path("AFAC_OUTPUTS_DIR", cls.outputs_dir),
+            has_explicit_outputs_dir=raw_outputs_dir is not None,
             index_dir=_env_path("AFAC_INDEX_DIR", cls.index_dir),
-            qwen_model=_setting("AFAC_QWEN_MODEL", cls.qwen_model),
-            qwen_base_url=_setting("AFAC_QWEN_BASE_URL", cls.qwen_base_url),
+            qwen_model=_setting("AFAC_QWEN_MODEL", runtime.qwen.model),
+            qwen_base_url=_setting("AFAC_QWEN_BASE_URL", runtime.qwen.base_url),
             qwen_enable_thinking=_env_bool("AFAC_QWEN_ENABLE_THINKING", cls.qwen_enable_thinking),
             max_evidence_chars=int(_setting("AFAC_MAX_EVIDENCE_CHARS", str(cls.max_evidence_chars))),
             top_k_retrieval=int(_setting("AFAC_TOP_K_RETRIEVAL", str(cls.top_k_retrieval))),
@@ -102,31 +118,55 @@ class Settings:
             option_evidence_chars=int(_setting("AFAC_OPTION_EVIDENCE_CHARS", str(cls.option_evidence_chars))),
             option_top_k_evidence=int(_setting("AFAC_OPTION_TOP_K_EVIDENCE", str(cls.option_top_k_evidence))),
             blind_top_docs=int(_setting("AFAC_BLIND_TOP_DOCS", str(cls.blind_top_docs))),
-            answer_max_tokens=int(_setting("AFAC_ANSWER_MAX_TOKENS", str(cls.answer_max_tokens))),
-            answer_enable_thinking=_env_bool("AFAC_ANSWER_ENABLE_THINKING", cls.answer_enable_thinking),
+            answer_max_tokens=int(
+                _setting("AFAC_ANSWER_MAX_TOKENS", str(runtime.thinking_profiles["answer_single_pass"].max_tokens))
+            ),
+            answer_enable_thinking=_env_bool(
+                "AFAC_ANSWER_ENABLE_THINKING", runtime.thinking_profiles["answer_single_pass"].enabled
+            ),
             option_judgement_max_tokens=int(
-                _setting("AFAC_OPTION_JUDGEMENT_MAX_TOKENS", str(cls.option_judgement_max_tokens))
+                _setting(
+                    "AFAC_OPTION_JUDGEMENT_MAX_TOKENS",
+                    str(runtime.thinking_profiles["option_judgement"].max_tokens),
+                )
             ),
             option_judgement_enable_thinking=_env_bool(
-                "AFAC_OPTION_JUDGEMENT_ENABLE_THINKING", cls.option_judgement_enable_thinking
+                "AFAC_OPTION_JUDGEMENT_ENABLE_THINKING",
+                runtime.thinking_profiles["option_judgement"].enabled,
             ),
             enable_multi_option_judgement=_env_bool(
                 "AFAC_ENABLE_MULTI_OPTION_JUDGEMENT", cls.enable_multi_option_judgement
             ),
-            logicrag_enabled=_env_bool("AFAC_LOGICRAG_ENABLED", cls.logicrag_enabled),
+            logicrag_enabled=_env_bool("AFAC_LOGICRAG_ENABLED", runtime.logicrag.enabled),
             retrieval_strategy=_setting("AFAC_RETRIEVAL_STRATEGY", cls.retrieval_strategy),
             logicrag_max_subproblems=int(
-                _setting("AFAC_LOGICRAG_MAX_SUBPROBLEMS", str(cls.logicrag_max_subproblems))
+                _setting("AFAC_LOGICRAG_MAX_SUBPROBLEMS", str(runtime.logicrag.max_subproblems))
             ),
-            logicrag_max_ranks=int(_setting("AFAC_LOGICRAG_MAX_RANKS", str(cls.logicrag_max_ranks))),
-            logicrag_rank_top_k=int(_setting("AFAC_LOGICRAG_RANK_TOP_K", str(cls.logicrag_rank_top_k))),
-            logicrag_memory_chars=int(_setting("AFAC_LOGICRAG_MEMORY_CHARS", str(cls.logicrag_memory_chars))),
+            logicrag_max_ranks=int(_setting("AFAC_LOGICRAG_MAX_RANKS", str(runtime.logicrag.max_ranks))),
+            logicrag_rank_top_k=int(_setting("AFAC_LOGICRAG_RANK_TOP_K", str(runtime.logicrag.rank_top_k))),
+            logicrag_memory_chars=int(_setting("AFAC_LOGICRAG_MEMORY_CHARS", str(runtime.logicrag.memory_chars))),
             logicrag_plan_max_tokens=int(
-                _setting("AFAC_LOGICRAG_PLAN_MAX_TOKENS", str(cls.logicrag_plan_max_tokens))
+                _setting(
+                    "AFAC_LOGICRAG_PLAN_MAX_TOKENS",
+                    str(runtime.thinking_profiles["logicrag_planner"].max_tokens),
+                )
             ),
             logicrag_summary_max_tokens=int(
-                _setting("AFAC_LOGICRAG_SUMMARY_MAX_TOKENS", str(cls.logicrag_summary_max_tokens))
+                _setting(
+                    "AFAC_LOGICRAG_SUMMARY_MAX_TOKENS",
+                    str(runtime.thinking_profiles["logicrag_rank_summary"].max_tokens),
+                )
             ),
+            request_timeout_seconds=int(
+                _setting("AFAC_REQUEST_TIMEOUT_SECONDS", str(runtime.qwen.request_timeout_seconds))
+            ),
+            max_retries=int(_setting("AFAC_MAX_RETRIES", str(runtime.qwen.max_retries))),
+            question_workers=int(_setting("AFAC_QUESTION_WORKERS", str(runtime.concurrency.question_workers))),
+            qwen_workers=int(_setting("AFAC_QWEN_WORKERS", str(runtime.concurrency.qwen_workers))),
+            qwen_request_limit=int(
+                _setting("AFAC_QWEN_REQUEST_LIMIT", str(runtime.concurrency.qwen_request_limit))
+            ),
+            bm25_workers=int(_setting("AFAC_BM25_WORKERS", str(runtime.concurrency.bm25_workers))),
         )
 
     def ensure_dirs(self) -> None:

@@ -7,6 +7,7 @@ import pytest
 from agent.config import Settings
 from agent.llm import qwen_client as qwen_client_module
 from agent.llm.qwen_client import QwenClient
+from agent.runtime.parallel import current_quota, reset_quota
 
 
 class FakeResponse:
@@ -31,6 +32,8 @@ def _settings() -> Settings:
         qwen_enable_thinking=False,
         request_timeout_seconds=30,
         max_retries=0,
+        qwen_workers=2,
+        qwen_request_limit=100,
     )
 
 
@@ -118,3 +121,23 @@ def test_qwen_client_dry_run_still_returns_dummy_response_without_http(monkeypat
     assert response.usage.prompt_tokens > 0
     assert response.usage.completion_tokens == 1
     assert called["post"] == 0
+
+
+def test_qwen_client_consumes_global_request_quota(monkeypatch):
+    reset_quota("qwen")
+    monkeypatch.setattr(qwen_client_module, "get_api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        qwen_client_module.requests,
+        "post",
+        lambda *args, **kwargs: FakeResponse(
+            {"choices": [{"message": {"content": "OK"}}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}
+        ),
+    )
+
+    client = QwenClient(replace(_settings(), qwen_request_limit=2), dry_run=False)
+    client.chat([{"role": "user", "content": "1"}], max_tokens=8)
+    client.chat([{"role": "user", "content": "2"}], max_tokens=8)
+
+    assert current_quota("qwen") == 2
+    with pytest.raises(RuntimeError, match="quota exceeded"):
+        client.chat([{"role": "user", "content": "3"}], max_tokens=8)

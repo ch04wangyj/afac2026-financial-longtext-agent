@@ -27,6 +27,17 @@
 
 ---
 
+## V3｜2026-06-18 本轮并发 + thinking 版本
+- **得分**：**30.0709**
+- **相对上一轮变化**：`-9.8793`
+- **相对 V2 新引入的关键改动**：
+  - 将 LogicRAG 关键 Qwen 调用统一切到 thinking 开启路径。
+  - 引入 YAML 运行时配置中心化，增加 `question_workers / qwen_workers / qwen_request_limit / bm25_workers`。
+  - 增加题级并发、rank 内 BM25 并发、多选逐项并发，以及确定顺序的并发安全结果聚合。
+  - 完成新的完整 A100 实跑，输出目录为 `outputs/a100_logicrag_parallel_thinking_2026-06-18_090743`。
+
+---
+
 ## 后续追加模板
 
 ```markdown

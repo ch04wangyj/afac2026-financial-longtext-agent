@@ -10,7 +10,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from agent.config import Settings
 from agent.io.jsonl import write_json
+from agent.io.output_layout import resolve_compare_dir
 
 
 def main() -> None:
@@ -18,16 +20,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Compare two answer_results.jsonl runs.")
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
 
+    settings = Settings.from_env()
     baseline = _load(args.baseline)
     candidate = _load(args.candidate)
     report = compare_runs(baseline, candidate)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(report["markdown"], encoding="utf-8")
-    write_json(args.output.with_suffix(".json"), report["data"])
-    print(f"wrote comparison -> {args.output}")
+    output_path = args.output or _default_output_path(
+        settings,
+        args.baseline,
+        args.candidate,
+        report["data"]["question_count"],
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(report["markdown"], encoding="utf-8")
+    write_json(output_path.with_suffix(".json"), report["data"])
+    print(f"wrote comparison -> {output_path}")
 
 
 def compare_runs(baseline: dict[str, dict], candidate: dict[str, dict]) -> dict:
@@ -80,8 +89,20 @@ def _load(path: Path) -> dict[str, dict]:
     return {row["qid"]: row for row in rows}
 
 
+
+def _default_output_path(settings: Settings, baseline: Path, candidate: Path, question_count: int) -> Path:
+    scope = "a100" if question_count == 100 else "sample"
+    out_dir = resolve_compare_dir(
+        settings,
+        scope=scope,
+        baseline_slug=baseline.parent.name,
+        candidate_slug=candidate.parent.name,
+    )
+    return out_dir / "comparison.md"
+
+
+
 def _empty_usage() -> dict[str, int]:
-    """初始化 Token 汇总。"""
     return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
 

@@ -49,6 +49,20 @@ def append_jsonl_rows(path: Path, rows: Iterable[dict]) -> int:
     return count
 
 
+def merge_rows_by_key(rows: Iterable[dict], key: str, order: list[str] | None = None) -> list[dict]:
+    """按主键去重合并行，并可按给定顺序输出。"""
+    merged: dict[str, dict] = {}
+    for row in rows:
+        row_key = row.get(key)
+        if row_key:
+            merged[str(row_key)] = row
+    if order is None:
+        return list(merged.values())
+    ordered = [merged[item] for item in order if item in merged]
+    leftovers = [row for row_key, row in merged.items() if row_key not in set(order)]
+    return ordered + leftovers
+
+
 def read_json(path: Path) -> dict | list:
     """读取普通 JSON 文件。"""
     with path.open("r", encoding="utf-8") as f:
