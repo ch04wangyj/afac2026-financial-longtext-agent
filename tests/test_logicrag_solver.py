@@ -1,13 +1,14 @@
-"""LogicRAG full-agent solver 集成测试。"""
+from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from agent.compress.rule_filter import RuleEvidenceCompressor
 from agent.config import Settings
 from agent.llm.qwen_client import LLMResponse
 from agent.reasoning import logicrag
 from agent.reasoning.solver import Solver
-from agent.runtime.logicrag_config import ThinkingProfile
+from agent.runtime.logicrag_config import ABoardRuntimeConfig, ConcurrencyConfig, LogicRAGRuntimeConfig, LogicRAGSection, QwenRuntimeConfig, ThinkingProfile
 from agent.schemas import Question, RetrievalResult, TokenUsage
 
 
@@ -20,6 +21,24 @@ def build_thinking_profiles() -> dict[str, ThinkingProfile]:
         "option_judgement": ThinkingProfile(enabled=False, max_tokens=192),
         "multi_option_fallback": ThinkingProfile(enabled=True, max_tokens=512),
     }
+
+
+
+def build_runtime_config(*, option_matrix_enabled: bool = False, coverage_gate_enabled: bool = False) -> LogicRAGRuntimeConfig:
+    return LogicRAGRuntimeConfig(
+        qwen=QwenRuntimeConfig(),
+        thinking_profiles=build_thinking_profiles(),
+        logicrag=LogicRAGSection(),
+        a_board=ABoardRuntimeConfig(
+            option_matrix_enabled=option_matrix_enabled,
+            coverage_gate_enabled=coverage_gate_enabled,
+            force_doc_coverage_for_a_board=True,
+            use_doc_ids_as_hint_only=False,
+            financial_calculator_enabled=False,
+        ),
+        concurrency=ConcurrencyConfig(),
+    )
+
 
 
 class LogicRAGSolverTest(unittest.TestCase):
@@ -230,6 +249,51 @@ class LogicRAGSolverTest(unittest.TestCase):
         self.assertEqual(fake_llm.calls[0]["max_tokens"], 384)
         self.assertFalse(fake_llm.calls[0]["enable_thinking"])
 
+    def test_solver_uses_option_matrix_when_enabled(self):
+        question = Question(
+            qid="q_matrix",
+            domain="financial_reports",
+            split="A",
+            question="根据财报披露，以下哪些说法正确？",
+            options={"A": "2025 年收入增长", "B": "2025 年收入下降", "C": "研发费用增加"},
+            answer_format="multi",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(
+            retrieval_strategy="hybrid",
+            logicrag_enabled=False,
+            answer_max_tokens=128,
+        )
+        fake_llm = FakeOptionMatrixLLM(settings)
+        with patch("agent.reasoning.solver.load_logicrag_runtime_config", return_value=build_runtime_config(option_matrix_enabled=True)):
+            solver = Solver(FakeLogicRetriever(), RuleEvidenceCompressor(max_chars=1200, top_k=3), fake_llm)
+
+        result = solver.solve(question)
+
+        self.assertEqual(result.answer, "AC")
+        self.assertEqual(result.metadata["strategy"], "option_matrix")
+        self.assertEqual(set(result.metadata["option_verdicts"].keys()), {"A", "B", "C"})
+
+    def test_option_matrix_metadata_records_option_candidate_counts(self):
+        question = Question(
+            qid="q_matrix_cov",
+            domain="financial_reports",
+            split="A",
+            question="根据财报披露，以下哪些说法正确？",
+            options={"A": "2025 年收入增长", "B": "现金流增长"},
+            answer_format="multi",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(retrieval_strategy="hybrid", logicrag_enabled=False)
+        fake_llm = FakeOptionMatrixLLM(settings)
+        with patch("agent.reasoning.solver.load_logicrag_runtime_config", return_value=build_runtime_config(option_matrix_enabled=True)):
+            solver = Solver(OptionCoverageRetriever(), RuleEvidenceCompressor(max_chars=1200, top_k=3), fake_llm)
+
+        result = solver.solve(question)
+
+        self.assertEqual(result.metadata["option_coverage"]["B"]["candidate_count"], 0)
+        self.assertTrue(result.metadata["option_coverage"]["B"]["missing"])
+
 
 class FakeLogicRetriever:
     def __init__(self) -> None:
@@ -240,11 +304,25 @@ class FakeLogicRetriever:
         self.strategy = "logicrag_agent"
         self.blind_top_docs = 4
 
+    @staticmethod
+    def _question_with_options(question):
+        return f"{question.question} " + " ".join(f"{key} {value}" for key, value in sorted(question.options.items()))
+
     def _candidate_doc_filter(self, question, restrict_to_doc_ids=True):
         return set(question.doc_ids) if restrict_to_doc_ids and question.doc_ids else None
 
     def retrieve(self, question, restrict_to_doc_ids=True):
         return self.index.search(question.question, top_k=self.fused_top_k, filter_doc_ids=self._candidate_doc_filter(question))
+
+
+class OptionCoverageRetriever(FakeLogicRetriever):
+    def __init__(self) -> None:
+        self.index = OptionCoverageIndex()
+        self.doc_index = None
+        self.top_k_per_query = 2
+        self.fused_top_k = 3
+        self.strategy = "hybrid"
+        self.blind_top_docs = 4
 
 
 class FakeIndex:
@@ -276,6 +354,28 @@ class FakeIndex:
             ),
         ]
         return base[:top_k]
+
+
+class OptionCoverageIndex:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def search(self, query, top_k=2, filter_doc_ids=None, source="test"):
+        self.calls.append((source, query))
+        if "现金流" in query:
+            return []
+        return [
+            RetrievalResult(
+                chunk_id="oa1",
+                doc_id="doc1",
+                domain="financial_reports",
+                score=1.0,
+                source=source,
+                query=query,
+                evidence_text="2025 年营业收入同比增长 12%，研发费用同比增加 5%。",
+                metadata={"page": 3, "title": "2025年年报"},
+            )
+        ]
 
 
 class FakeLogicLLM:
@@ -338,6 +438,28 @@ class FakeStandardLLM:
             text='{"answer":"B","confidence":0.72,"reason":"证据显示需要识别受益所有人并保存身份资料"}',
             usage=TokenUsage(prompt_tokens=3, completion_tokens=2),
         )
+
+
+class FakeOptionMatrixLLM:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.calls = []
+
+    def chat(self, messages, temperature=0.0, max_tokens=0, enable_thinking=None, thinking_profile=None):
+        if thinking_profile is not None:
+            max_tokens = thinking_profile.max_tokens
+            enable_thinking = thinking_profile.enabled
+        self.calls.append({"max_tokens": max_tokens, "enable_thinking": enable_thinking})
+        prompt = "\n".join(message.get("content", "") for message in messages)
+        if "2025 年收入增长" in prompt:
+            text = '{"option":"A","relation":"support","confidence":0.95,"support_evidence":["[1]"],"reason":"收入同比增长"}'
+        elif "2025 年收入下降" in prompt:
+            text = '{"option":"B","relation":"refute","confidence":0.92,"refute_evidence":["[1]"],"reason":"收入并未下降"}'
+        elif "研发费用增加" in prompt:
+            text = '{"option":"C","relation":"support","confidence":0.88,"support_evidence":["[1]"],"reason":"研发费用增加"}'
+        else:
+            text = '{"option":"B","relation":"insufficient","confidence":0.10,"reason":"证据不足"}'
+        return LLMResponse(text=text, usage=TokenUsage(prompt_tokens=2, completion_tokens=2))
 
 
 if __name__ == "__main__":

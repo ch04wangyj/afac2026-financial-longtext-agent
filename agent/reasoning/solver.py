@@ -8,13 +8,17 @@ from agent.compress.rule_filter import RuleEvidenceCompressor
 from agent.llm.qwen_client import QwenClient
 from agent.reasoning import logicrag
 from agent.reasoning.answer_parser import extract_json_object, parse_answer, parse_verdict
+from agent.reasoning.option_matrix import OptionVerdict, parse_option_verdict, synthesize_answer
 from agent.reasoning.prompts import (
     build_answer_messages,
     build_logicrag_final_compose_messages,
+    build_option_evidence_judgement_messages,
     build_option_judgement_messages,
 )
 from agent.runtime.logicrag_config import load_logicrag_runtime_config
 from agent.runtime.parallel import parallel_map_ordered
+from agent.retrieve.coverage import assess_doc_coverage, retrieve_missing_doc_evidence
+from agent.retrieve.option_retrieval import retrieve_option_candidates
 from agent.retrieve.retriever import Retriever
 from agent.schemas import AnswerResult, Question, RetrievalResult, TokenUsage
 
@@ -33,12 +37,15 @@ class Solver:
         """处理一道题并返回可提交答案与可审计证据。"""
         if self.llm.settings.retrieval_strategy == "logicrag_agent" and self.llm.settings.logicrag_enabled:
             return self._solve_logicrag_agent(question)
+        if question.answer_format == "multi" and self.runtime.a_board.option_matrix_enabled:
+            return self._solve_by_option_matrix(question)
         if question.answer_format == "multi" and self.llm.settings.enable_multi_option_judgement:
             return self._solve_multi_by_option(question)
 
         answer_profile = self.llm.settings.thinking_profile_for_step("answer_single_pass")
         retrieved = self.retriever.retrieve(question)
         evidence = self.compressor.compress(question, retrieved)
+        evidence, coverage_report = self._apply_a_board_coverage_gate(question, retrieved, evidence)
         messages = build_answer_messages(question, evidence)
         response = self.llm.chat(
             messages,
@@ -62,6 +69,7 @@ class Solver:
                 "answer_format": question.answer_format,
                 "domain": question.domain,
                 "reasoning": response.reasoning,
+                "coverage_report": coverage_report,
             },
         )
 
@@ -123,6 +131,7 @@ class Solver:
 
         final_compose_profile = self.llm.settings.thinking_profile_for_step("logicrag_final_compose")
         evidence = self.compressor.compress(question, combined)
+        evidence, coverage_report = self._apply_a_board_coverage_gate(question, combined, evidence)
         messages = build_logicrag_final_compose_messages(question, evidence, plan, rank_memories)
         response = self.llm.chat(
             messages,
@@ -151,6 +160,87 @@ class Solver:
                 "logic_plan": plan.to_dict(),
                 "plan_token_usage": plan_response.usage.to_dict(),
                 "rank_memories": rank_memories,
+                "coverage_report": coverage_report,
+            },
+        )
+
+    def _solve_by_option_matrix(self, question: Question) -> AnswerResult:
+        """A 榜质量模式：逐选项检索 + support/refute/insufficient judgement。"""
+        total_usage = TokenUsage()
+        filter_doc_ids = self.retriever._candidate_doc_filter(question, not self.runtime.a_board.use_doc_ids_as_hint_only)
+        option_candidates = retrieve_option_candidates(
+            self.retriever.index,
+            question,
+            filter_doc_ids=filter_doc_ids,
+            top_k_per_query=self.retriever.top_k_per_query,
+            fused_top_k=self.runtime.a_board.max_option_candidates,
+        )
+        verdicts: dict[str, OptionVerdict] = {}
+        option_coverage: dict[str, dict] = {}
+        all_evidence: list[RetrievalResult] = []
+        seen_chunks: set[str] = set()
+
+        for option_key, option_text in sorted(question.options.items()):
+            candidates = option_candidates.get(option_key, [])
+            option_coverage[option_key] = {
+                "candidate_count": len(candidates),
+                "evidence_doc_ids": list(dict.fromkeys(item.doc_id for item in candidates)),
+                "missing": len(candidates) == 0,
+            }
+            option_question = Question(
+                qid=f"{question.qid}:{option_key}",
+                domain=question.domain,
+                split=question.split,
+                question=question.question,
+                options={option_key: option_text},
+                answer_format="tf",
+                type=question.type,
+                doc_ids=question.doc_ids,
+            )
+            evidence = self._option_compressor(question.domain).compress(option_question, candidates)
+            for item in evidence:
+                if item.chunk_id not in seen_chunks:
+                    all_evidence.append(item)
+                    seen_chunks.add(item.chunk_id)
+            messages = build_option_evidence_judgement_messages(question, option_key, option_text, evidence)
+            response = self.llm.chat(
+                messages,
+                temperature=0.0,
+                thinking_profile=self.llm.settings.thinking_profile_for_step("option_judgement"),
+            )
+            total_usage.add(response.usage)
+            verdicts[option_key] = parse_option_verdict(response.text, option_key)
+
+        final_evidence = _limit_evidence_with_doc_coverage(all_evidence, self.compressor.top_k, question.doc_ids)
+        final_evidence, coverage_report = self._apply_a_board_coverage_gate(question, all_evidence, final_evidence)
+        answer = synthesize_answer(verdicts, question.answer_format)
+        confidence = _average_option_verdict_confidence(verdicts)
+        fallback_record: dict | None = None
+        if not answer:
+            fallback_record = self._single_pass_multi_fallback(question, total_usage, all_evidence, seen_chunks)
+            fallback_answer = str(fallback_record.get("answer", ""))
+            if fallback_answer:
+                answer = fallback_answer
+                confidence = float(fallback_record.get("confidence", 0.0) or 0.0)
+            else:
+                answer = _fallback_multi_option([verdict.to_dict() for verdict in verdicts.values()]) or "A"
+                confidence = 0.0
+
+        return AnswerResult(
+            qid=question.qid,
+            answer=answer,
+            confidence=confidence,
+            evidence=final_evidence,
+            token_usage=total_usage,
+            raw_response="",
+            metadata={
+                "answer_format": question.answer_format,
+                "domain": question.domain,
+                "strategy": "option_matrix",
+                "option_verdicts": {key: verdict.to_dict() for key, verdict in verdicts.items()},
+                "option_coverage": option_coverage,
+                "coverage_report": coverage_report,
+                "fallback": fallback_record,
             },
         )
 
@@ -228,6 +318,8 @@ class Solver:
         answer = "".join(sorted(set(accepted)))
         confidence = _average_known_confidence(option_records)
         fallback_record: dict | None = None
+        final_evidence = _limit_evidence_with_doc_coverage(all_evidence, self.compressor.top_k, question.doc_ids)
+        final_evidence, coverage_report = self._apply_a_board_coverage_gate(question, all_evidence, final_evidence)
         if not answer:
             # 全部选项都判 false 通常意味着证据或逐项提示存在盲点，追加一次整体复核。
             fallback_record = self._single_pass_multi_fallback(question, total_usage, all_evidence, seen_chunks)
@@ -244,7 +336,7 @@ class Solver:
             qid=question.qid,
             answer=answer,
             confidence=confidence,
-            evidence=_limit_evidence_with_doc_coverage(all_evidence, self.compressor.top_k, question.doc_ids),
+            evidence=final_evidence,
             token_usage=total_usage,
             raw_response="",
             metadata={
@@ -252,6 +344,7 @@ class Solver:
                 "domain": question.domain,
                 "strategy": "multi_option_judgement",
                 "option_judgements": option_records,
+                "coverage_report": coverage_report,
                 "fallback": fallback_record,
             },
         )
@@ -267,6 +360,7 @@ class Solver:
         fallback_profile = self.llm.settings.thinking_profile_for_step("multi_option_fallback")
         retrieved = self.retriever.retrieve(question)
         evidence = self.compressor.compress(question, retrieved)
+        evidence, coverage_report = self._apply_a_board_coverage_gate(question, retrieved, evidence)
         messages = build_answer_messages(question, evidence)
         response = self.llm.chat(
             messages,
@@ -285,8 +379,33 @@ class Solver:
             "token_usage": response.usage.to_dict(),
             "raw_response": response.text,
             "reasoning": response.reasoning,
+            "coverage_report": coverage_report,
             "evidence_doc_ids": [item.doc_id for item in evidence],
         }
+
+    def _apply_a_board_coverage_gate(
+        self,
+        question: Question,
+        retrieved: list[RetrievalResult],
+        evidence: list[RetrievalResult],
+    ) -> tuple[list[RetrievalResult], dict]:
+        """A 榜质量模式：若 evidence 缺少 doc_ids，则补检索缺失文档后重压缩。"""
+        if not self.runtime.a_board.coverage_gate_enabled:
+            return evidence, {}
+        report = assess_doc_coverage(question.doc_ids, evidence)
+        if report.ok or not report.missing_doc_ids:
+            return evidence, report.to_dict()
+        query = self.retriever._question_with_options(question)
+        supplemental = retrieve_missing_doc_evidence(
+            self.retriever.index,
+            query=query,
+            missing_doc_ids=report.missing_doc_ids,
+            top_k=max(3, self.retriever.top_k_per_query // 2),
+        )
+        merged = [*retrieved, *supplemental]
+        recompressed = self.compressor.compress(question, merged)
+        final_report = assess_doc_coverage(question.doc_ids, recompressed)
+        return recompressed, final_report.to_dict()
 
     def _option_compressor(self, domain: str) -> RuleEvidenceCompressor:
         """按领域选择逐选项证据预算，兼顾 Token 与证据充分性。"""
@@ -326,6 +445,16 @@ def _average_known_confidence(records: list[dict]) -> float:
         return 0.0
     values = [float(record.get("confidence", 0.0) or 0.0) for record in records]
     return sum(values) / len(values)
+
+
+
+def _average_option_verdict_confidence(verdicts: dict[str, OptionVerdict]) -> float:
+    """汇总 option-matrix verdict 置信度。"""
+    if not verdicts:
+        return 0.0
+    values = [float(verdict.confidence or 0.0) for verdict in verdicts.values()]
+    return sum(values) / len(values)
+
 
 
 def _fallback_multi_option(records: list[dict]) -> str:
