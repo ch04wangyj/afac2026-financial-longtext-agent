@@ -63,3 +63,18 @@ def test_runtime_config_exposes_a_board_quality_flags():
     assert config.a_board.force_doc_coverage_for_a_board is True
     assert config.a_board.use_doc_ids_as_hint_only is False
     assert config.a_board.financial_calculator_enabled is False
+
+
+
+def test_a_board_runtime_env_overrides(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("AFAC_A_BOARD_OPTION_MATRIX_ENABLED", "true")
+    monkeypatch.setenv("AFAC_A_BOARD_COVERAGE_GATE_ENABLED", "true")
+    monkeypatch.setenv("AFAC_A_BOARD_FINANCIAL_CALCULATOR_ENABLED", "true")
+    monkeypatch.setenv("AFAC_A_BOARD_USE_DOC_IDS_AS_HINT_ONLY", "false")
+
+    config = load_logicrag_runtime_config(CONFIG_PATH)
+
+    assert config.a_board.option_matrix_enabled is True
+    assert config.a_board.coverage_gate_enabled is True
+    assert config.a_board.financial_calculator_enabled is True
+    assert config.a_board.use_doc_ids_as_hint_only is False

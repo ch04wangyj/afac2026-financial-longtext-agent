@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import random
 import sys
 from collections import defaultdict
@@ -31,6 +32,7 @@ def main() -> None:
     """按领域和题型抽样，运行完整求解链路。"""
     parser = argparse.ArgumentParser(description="Run a stratified sample of A-board questions.")
     parser.add_argument("--dry-run", action="store_true", help="Do not call Qwen.")
+    parser.add_argument("--a-board-quality", action="store_true", help="Enable A-board coverage gate, option matrix, and financial calculator.")
     parser.add_argument("--sample-size", type=int, default=20, help="Total number of questions.")
     parser.add_argument("--per-domain", type=int, default=4, help="Target number of questions per domain.")
     parser.add_argument("--seed", type=int, default=20260609)
@@ -38,6 +40,9 @@ def main() -> None:
     parser.add_argument("--qids", nargs="*", default=None, help="Explicit qids to run instead of sampling.")
     parser.add_argument("--resume", action="store_true", help="Resume from existing answer_results.jsonl.")
     args = parser.parse_args()
+
+    if args.a_board_quality:
+        _enable_a_board_quality_mode()
 
     settings = Settings.from_env()
     settings.ensure_dirs()
@@ -102,8 +107,18 @@ def main() -> None:
     print(f"wrote {len(rows)} sampled results -> {run_dir}", flush=True)
 
 
+
+def _enable_a_board_quality_mode() -> None:
+    """通过环境变量打开 A 榜质量模式，避免手改 YAML。"""
+    os.environ["AFAC_A_BOARD_OPTION_MATRIX_ENABLED"] = "true"
+    os.environ["AFAC_A_BOARD_COVERAGE_GATE_ENABLED"] = "true"
+    os.environ["AFAC_A_BOARD_FINANCIAL_CALCULATOR_ENABLED"] = "true"
+    os.environ["AFAC_A_BOARD_USE_DOC_IDS_AS_HINT_ONLY"] = "false"
+
+
+
 def select_stratified_sample(questions, sample_size: int, per_domain: int, rng: random.Random):
-    """优先保证各领域覆盖，再尽量覆盖 mcq/multi/tf。"""
+
     by_domain: dict[str, list] = defaultdict(list)
     for question in questions:
         by_domain[question.domain].append(question)

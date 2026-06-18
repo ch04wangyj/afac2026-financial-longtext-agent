@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -27,11 +28,15 @@ def main() -> None:
     """执行题目求解；真实调用前建议用 --limit 控制规模。"""
     parser = argparse.ArgumentParser(description="Run retrieval + Qwen answering for A group questions.")
     parser.add_argument("--dry-run", action="store_true", help="Do not call Qwen; emit deterministic dummy answers.")
+    parser.add_argument("--a-board-quality", action="store_true", help="Enable A-board coverage gate, option matrix, and financial calculator.")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of questions for smoke tests.")
     parser.add_argument("--domains", nargs="*", default=None, help="Optional domains to include.")
     parser.add_argument("--index", type=Path, default=None)
     parser.add_argument("--resume", action="store_true", help="Resume from existing answer_results.jsonl.")
     args = parser.parse_args()
+
+    if args.a_board_quality:
+        _enable_a_board_quality_mode()
 
     settings = Settings.from_env()
     settings.ensure_dirs()
@@ -94,6 +99,15 @@ def main() -> None:
     rows.extend(solved_by_qid[question.qid] for question in todo_questions)
     write_jsonl(out_path, rows)
     print(f"wrote {len(rows)} answer results -> {out_path}", flush=True)
+
+
+def _enable_a_board_quality_mode() -> None:
+    """通过环境变量打开 A 榜质量模式，避免手改 YAML。"""
+    os.environ["AFAC_A_BOARD_OPTION_MATRIX_ENABLED"] = "true"
+    os.environ["AFAC_A_BOARD_COVERAGE_GATE_ENABLED"] = "true"
+    os.environ["AFAC_A_BOARD_FINANCIAL_CALCULATOR_ENABLED"] = "true"
+    os.environ["AFAC_A_BOARD_USE_DOC_IDS_AS_HINT_ONLY"] = "false"
+
 
 
 def _test_run_name(limit: int, domains: list[str] | None) -> str:
