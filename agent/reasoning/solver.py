@@ -11,6 +11,7 @@ from agent.reasoning.answer_parser import extract_json_object, parse_answer, par
 from agent.reasoning.option_matrix import OptionVerdict, parse_option_verdict, synthesize_answer
 from agent.reasoning.prompts import (
     build_answer_messages,
+    build_financial_metric_extraction_messages,
     build_logicrag_final_compose_messages,
     build_option_evidence_judgement_messages,
     build_option_judgement_messages,
@@ -58,6 +59,7 @@ class Solver:
             # 格式解析失败时给出可提交兜底值，同时把置信度降为 0，便于后续复核。
             answer = "A"
             confidence = 0.0
+        financial_metric_extraction = self._maybe_extract_financial_metrics(question, evidence, response.usage)
         return AnswerResult(
             qid=question.qid,
             answer=answer,
@@ -70,6 +72,7 @@ class Solver:
                 "domain": question.domain,
                 "reasoning": response.reasoning,
                 "coverage_report": coverage_report,
+                "financial_metric_extraction": financial_metric_extraction,
             },
         )
 
@@ -382,6 +385,25 @@ class Solver:
             "coverage_report": coverage_report,
             "evidence_doc_ids": [item.doc_id for item in evidence],
         }
+
+    def _maybe_extract_financial_metrics(
+        self,
+        question: Question,
+        evidence: list[RetrievalResult],
+        total_usage: TokenUsage | None = None,
+    ) -> dict | None:
+        """财报题可选：抽取结构化指标 metadata，暂不改写最终答案。"""
+        if question.domain != "financial_reports" or not self.runtime.a_board.financial_calculator_enabled:
+            return None
+        messages = build_financial_metric_extraction_messages(question, evidence)
+        response = self.llm.chat(
+            messages,
+            temperature=0.0,
+            thinking_profile=self.llm.settings.thinking_profile_for_step("option_judgement"),
+        )
+        if total_usage is not None:
+            total_usage.add(response.usage)
+        return extract_json_object(response.text) or {"raw_response": response.text}
 
     def _apply_a_board_coverage_gate(
         self,

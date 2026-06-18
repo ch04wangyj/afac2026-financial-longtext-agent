@@ -116,12 +116,55 @@ def build_option_evidence_judgement_messages(
     ]
 
 
+
+def build_financial_metric_extraction_messages(
+    question: Question,
+    evidence: list[RetrievalResult],
+) -> list[dict[str, str]]:
+    """构造财报题结构化指标抽取 Prompt。"""
+    options = "\n".join(f"{key}. {value}" for key, value in sorted(question.options.items()))
+    user = f"""请从证据中抽取财务指标原始数值。不要计算最终答案。
+
+题目: {question.question}
+选项:
+{options}
+
+证据:
+{format_evidence(evidence)}
+
+只输出 JSON:
+{{
+  "metric_values": [
+    {{
+      "entity": "公司或报告主体",
+      "year": "年份",
+      "metric": "指标名称",
+      "value": "原文数值",
+      "unit": "元|千元|万元|亿元|%|其他",
+      "evidence_id": "[1]"
+    }}
+  ],
+  "missing_metrics": ["缺失的指标"]
+}}
+
+规则:
+- 只抽取证据中明确出现的数值。
+- 保留原文单位，不要擅自换算。
+- 不要计算最终答案，不要判断选项对错。
+"""
+    return [
+        {"role": "system", "content": "你是财报数值抽取器，只抽取证据中的原始指标和单位。"},
+        {"role": "user", "content": user},
+    ]
+
+
+
 def build_logicrag_plan_messages(
     question: Question,
     max_subproblems: int,
     max_ranks: int,
 ) -> list[dict[str, str]]:
-    """构造 LogicRAG 规划 Prompt，要求输出可解析 DAG JSON。"""
+
     role = DOMAIN_ROLES.get(question.domain, "你是金融长文本问答专家。")
     options = "\n".join(f"{key}. {value}" for key, value in sorted(question.options.items())) or "无"
     user = f"""你现在是 LogicRAG规划器。请把题目拆成可检索、可组合的子问题 DAG。

@@ -7,6 +7,7 @@ from agent.compress.rule_filter import RuleEvidenceCompressor
 from agent.config import Settings
 from agent.llm.qwen_client import LLMResponse
 from agent.reasoning import logicrag
+from agent.reasoning.answer_parser import extract_json_object
 from agent.reasoning.solver import Solver
 from agent.runtime.logicrag_config import ABoardRuntimeConfig, ConcurrencyConfig, LogicRAGRuntimeConfig, LogicRAGSection, QwenRuntimeConfig, ThinkingProfile
 from agent.schemas import Question, RetrievalResult, TokenUsage
@@ -294,6 +295,41 @@ class LogicRAGSolverTest(unittest.TestCase):
         self.assertEqual(result.metadata["option_coverage"]["B"]["candidate_count"], 0)
         self.assertTrue(result.metadata["option_coverage"]["B"]["missing"])
 
+    def test_financial_calculator_enabled_records_metric_extraction_metadata(self):
+        question = Question(
+            qid="fin_calc_meta",
+            domain="financial_reports",
+            split="A",
+            question="根据财报披露，下列关于现金流与收入比例的说法哪些正确？",
+            options={"A": "比亚迪2024年经营活动现金流净额低于营业收入的一半"},
+            answer_format="multi",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(retrieval_strategy="hybrid", logicrag_enabled=False, enable_multi_option_judgement=False)
+        fake_llm = FakeFinancialExtractionLLM(settings)
+        with patch("agent.reasoning.solver.load_logicrag_runtime_config", return_value=build_runtime_config()):
+            solver = Solver(FakeLogicRetriever(), RuleEvidenceCompressor(max_chars=1200, top_k=3), fake_llm)
+        solver.runtime = LogicRAGRuntimeConfig(
+            qwen=solver.runtime.qwen,
+            thinking_profiles=solver.runtime.thinking_profiles,
+            logicrag=solver.runtime.logicrag,
+            a_board=ABoardRuntimeConfig(
+                option_matrix_enabled=False,
+                coverage_gate_enabled=False,
+                force_doc_coverage_for_a_board=True,
+                use_doc_ids_as_hint_only=False,
+                financial_calculator_enabled=True,
+            ),
+            concurrency=solver.runtime.concurrency,
+            source_path=solver.runtime.source_path,
+        )
+
+        result = solver.solve(question)
+
+        self.assertIn("financial_metric_extraction", result.metadata)
+        parsed = result.metadata["financial_metric_extraction"]
+        self.assertEqual(parsed["metric_values"][0]["metric"], "营业收入")
+
 
 class FakeLogicRetriever:
     def __init__(self) -> None:
@@ -459,6 +495,24 @@ class FakeOptionMatrixLLM:
             text = '{"option":"C","relation":"support","confidence":0.88,"support_evidence":["[1]"],"reason":"研发费用增加"}'
         else:
             text = '{"option":"B","relation":"insufficient","confidence":0.10,"reason":"证据不足"}'
+        return LLMResponse(text=text, usage=TokenUsage(prompt_tokens=2, completion_tokens=2))
+
+
+class FakeFinancialExtractionLLM:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.calls = []
+
+    def chat(self, messages, temperature=0.0, max_tokens=0, enable_thinking=None, thinking_profile=None):
+        if thinking_profile is not None:
+            max_tokens = thinking_profile.max_tokens
+            enable_thinking = thinking_profile.enabled
+        self.calls.append({"max_tokens": max_tokens, "enable_thinking": enable_thinking})
+        prompt = "\n".join(message.get("content", "") for message in messages)
+        if "比亚迪2024年" in prompt:
+            text = '{"metric_values":[{"entity":"比亚迪","year":"2024","metric":"营业收入","value":"777,102,000","unit":"千元","evidence_id":"[1]"}],"missing_metrics":[]}'
+        else:
+            text = '{"metric_values":[{"entity":"美的集团","year":"2025","metric":"营业收入","value":"456,451,731","unit":"千元","evidence_id":"[1]"}],"missing_metrics":[]}'
         return LLMResponse(text=text, usage=TokenUsage(prompt_tokens=2, completion_tokens=2))
 
 
