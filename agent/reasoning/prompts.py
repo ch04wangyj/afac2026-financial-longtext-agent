@@ -76,6 +76,46 @@ def build_option_judgement_messages(
     ]
 
 
+def build_option_evidence_judgement_messages(
+    question: Question,
+    option_key: str,
+    option_text: str,
+    evidence: list[RetrievalResult],
+) -> list[dict[str, str]]:
+    """构造逐选项证据支持/反驳/不足判断 Prompt。"""
+    role = DOMAIN_ROLES.get(question.domain, "你是金融长文本问答专家。")
+    user = f"""请只依据给定证据判断选项是否被支持、被反驳或证据不足。
+
+题型: {question.answer_format}
+原题: {question.question}
+待判断选项: {option_key}. {option_text}
+
+证据:
+{format_evidence(evidence)}
+
+只输出 JSON:
+{{
+  "option": "{option_key}",
+  "relation": "support|refute|insufficient",
+  "confidence": 0到1之间的小数,
+  "support_evidence": ["证据编号，如[1]"],
+  "refute_evidence": ["证据编号，如[2]"],
+  "reason": "不超过60字"
+}}
+
+规则:
+- support 表示该选项准确，应进入答案。
+- refute 表示证据明确说明该选项错误。
+- insufficient 表示证据不足，不能用常识猜测。
+- 不得使用外部知识，不得编造证据编号。
+- reason 必须引用关键原文事实，不要输出 Markdown。
+"""
+    return [
+        {"role": "system", "content": f"{role} 你负责逐选项证据判断，只能依据给定证据。"},
+        {"role": "user", "content": user},
+    ]
+
+
 def build_logicrag_plan_messages(
     question: Question,
     max_subproblems: int,
