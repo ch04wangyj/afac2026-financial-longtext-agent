@@ -53,6 +53,39 @@ COMPARE_HINTS = (
     "是否",
 )
 
+CLAUSE_CONSEQUENCE_HINTS = (
+    "处罚",
+    "罚款",
+    "扣减",
+    "减分",
+    "责令",
+    "不得",
+    "期限",
+)
+
+GENERIC_CONTEXT_HINTS = (
+    "审计报告",
+    "公允反映",
+    "坚持依法合规",
+    "客观公正",
+    "原则",
+    "财务报表",
+)
+
+SPECIFIC_EVIDENCE_HINTS = (
+    "营业收入",
+    "净利润",
+    "现金流",
+    "分红",
+    "日期",
+    "发行公告",
+    "罚款",
+    "扣减",
+    "减分",
+    "责令",
+    "期限",
+)
+
 
 
 def build_retrieval_target(
@@ -143,6 +176,75 @@ def question_with_options(question: Question) -> str:
 
 
 
+def analyze_evidence_sufficiency(target: RetrievalTarget, evidence_texts: list[str]) -> dict:
+    normalized_texts = [" ".join(str(text or "").split()) for text in evidence_texts if str(text or "").strip()]
+    combined = "\n".join(normalized_texts)
+    found_numbers = [item for item in target.numbers if item and item in combined]
+    found_dates = [item for item in target.dates if item and item in combined]
+    found_entities = [item for item in target.entities if item and item in combined]
+    found_must_terms = [item for item in target.must_terms if item and item in combined]
+
+    missing_numbers = [item for item in target.numbers if item not in found_numbers]
+    missing_dates = [item for item in target.dates if item not in found_dates]
+    missing_entities = [item for item in target.entities if item not in found_entities]
+    missing_must_terms = [item for item in target.must_terms if item not in found_must_terms]
+
+    comparison_incomplete = False
+    comparison_closure = 1.0
+    failure_tags: list[str] = []
+
+    if target.evidence_intent == "comparison":
+        number_like = [*target.numbers, *target.dates]
+        found_number_like = [*found_numbers, *found_dates]
+        if len(number_like) >= 2:
+            comparison_closure = min(1.0, len(found_number_like) / len(number_like))
+            comparison_incomplete = len(found_number_like) < 2
+            if comparison_incomplete:
+                failure_tags.append("missing_second_endpoint")
+        elif len(number_like) == 1 and len(found_number_like) < 1:
+            comparison_incomplete = True
+            comparison_closure = 0.0
+            failure_tags.append("missing_numeric_value")
+
+    generic_context_only = _is_generic_context_only(normalized_texts)
+    if generic_context_only:
+        failure_tags.append("generic_context_only")
+
+    missing_clause_consequence = _looks_like_clause_consequence_question(target.question) and not _has_clause_consequence(normalized_texts)
+    if missing_clause_consequence:
+        failure_tags.append("missing_clause_consequence")
+
+    if missing_numbers and target.evidence_intent in {"comparison", "number"} and "missing_numeric_value" not in failure_tags:
+        failure_tags.append("missing_numeric_value")
+
+    sufficient = not comparison_incomplete and not generic_context_only and not missing_clause_consequence
+    if target.entities and len(found_entities) < min(2, len(target.entities)) and target.evidence_intent == "comparison":
+        sufficient = False
+    if missing_numbers and target.evidence_intent in {"comparison", "number"}:
+        sufficient = False
+
+    evidence_density = _estimate_evidence_density(normalized_texts)
+
+    return {
+        "sufficient": sufficient,
+        "comparison_incomplete": comparison_incomplete,
+        "comparison_closure": round(comparison_closure, 6),
+        "failure_tags": _dedupe(failure_tags),
+        "evidence_density": round(evidence_density, 6),
+        "generic_context_only": generic_context_only,
+        "missing_clause_consequence": missing_clause_consequence,
+        "missing_numbers": missing_numbers,
+        "missing_dates": missing_dates,
+        "missing_entities": missing_entities,
+        "missing_must_terms": missing_must_terms,
+        "found_numbers": found_numbers,
+        "found_dates": found_dates,
+        "found_entities": found_entities,
+        "found_must_terms": found_must_terms,
+    }
+
+
+
 def _extract_option_terms(question: Question) -> list[str]:
     output: list[str] = []
     for _key, value in sorted(question.options.items()):
@@ -208,6 +310,46 @@ def _memory_anchor_text(prior_memories: list[dict]) -> str:
         return ""
     summary = " ".join(str(prior_memories[-1].get("summary", "")).split())
     return summary[:80]
+
+
+
+def _estimate_evidence_density(texts: list[str]) -> float:
+    if not texts:
+        return 0.0
+    score = 0.0
+    for text in texts:
+        if any(hint in text for hint in SPECIFIC_EVIDENCE_HINTS):
+            score += 0.40
+        if any(char.isdigit() for char in text) and any(hint in text for hint in SPECIFIC_EVIDENCE_HINTS):
+            score += 0.35
+        if any(hint in text for hint in CLAUSE_CONSEQUENCE_HINTS):
+            score += 0.35
+    return min(1.0, score / max(1, len(texts)))
+
+
+
+def _is_generic_context_only(texts: list[str]) -> bool:
+    if not texts:
+        return True
+    for text in texts:
+        if any(hint in text for hint in SPECIFIC_EVIDENCE_HINTS):
+            return False
+        if any(hint in text for hint in CLAUSE_CONSEQUENCE_HINTS):
+            return False
+    if not any(any(hint in text for hint in GENERIC_CONTEXT_HINTS) for text in texts):
+        return False
+    return True
+
+
+
+def _looks_like_clause_consequence_question(text: str) -> bool:
+    compact = " ".join((text or "").split())
+    return any(hint in compact for hint in ("处罚", "扣减", "减分", "期限", "是否会被扣减", "行政处罚"))
+
+
+
+def _has_clause_consequence(texts: list[str]) -> bool:
+    return any(any(hint in text for hint in CLAUSE_CONSEQUENCE_HINTS) for text in texts)
 
 
 

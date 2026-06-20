@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from agent.index.bm25 import BM25SearchIndex
 from agent.preprocess.chunkers import extract_dates, extract_numbers
 from agent.reasoning.logicrag import build_logicrag_rrf_queries
+from agent.retrieve.doc_first import retrieve_doc_first
 from agent.retrieve.fusion import reciprocal_rank_fusion
 from agent.retrieve.query import build_rule_queries
 from agent.retrieve.rerank import rerank_retrieval_results
@@ -35,6 +36,10 @@ RAG_VARIANTS = [
     RagVariant("rule_multi_rrf", "RRF over rule-generated queries with numbers/dates/options"),
     RagVariant("field_boosted_rrf", "rule_multi_rrf plus clause/number/date/title boosts"),
     RagVariant("bm25f_lite_rrf", "RRF over rule queries with BM25F-lite field-aware sparse scoring"),
+    RagVariant(
+        "doc_first_bm25f_expansion",
+        "Formal default path: BM25F-lite sparse retrieval, doc-first local expansion, and offline expansion-field support",
+    ),
     RagVariant(
         "broad_sparse_structured_rerank",
         "Broad sparse recall via field_boosted_rrf, then structured rerank/coverage correction",
@@ -121,6 +126,13 @@ def retrieve_with_variant(
             for query in build_rule_queries(question)
         ]
         return reciprocal_rank_fusion(ranked_lists, top_k=top_k)
+
+    if variant.name == "doc_first_bm25f_expansion":
+        keyword_bundles = [tuple(query.split()) for query in build_rule_queries(question)]
+        results = retrieve_doc_first(index, keyword_bundles=keyword_bundles, top_docs=max(8, top_k), top_k=top_k)
+        for result in results:
+            result.source = variant.name
+        return results[:top_k]
 
     if variant.name == "logic_lite_rrf":
         ranked_lists = [

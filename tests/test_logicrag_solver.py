@@ -391,6 +391,42 @@ class LogicRAGSolverTest(unittest.TestCase):
         self.assertFalse(result.metadata["option_runs"]["A"]["retried"])
         self.assertTrue(result.metadata["option_runs"]["B"]["retried"])
         self.assertTrue(any(source == "multi_logicrag_retry_B" for source, _query in retriever.index.calls))
+        self.assertIn("sufficiency", result.metadata["option_runs"]["B"])
+        self.assertIn("comparison_incomplete", result.metadata["option_runs"]["B"]["sufficiency"])
+        self.assertTrue(
+            any("2025" in query and "收入下降" in query for query in result.metadata["option_runs"]["B"]["retry_queries"])
+        )
+        self.assertIn("refinement_triggered", result.metadata["option_runs"]["B"])
+
+    def test_logicrag_agent_records_rank_sufficiency_report(self):
+        question = Question(
+            qid="q_logicrag_sufficiency",
+            domain="regulatory",
+            split="A",
+            question="根据客户尽职调查要求，银行是否必须识别受益所有人并保存身份资料？",
+            options={"A": "不需要识别受益所有人", "B": "需要识别受益所有人并保存身份资料"},
+            answer_format="mcq",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(
+            retrieval_strategy="logicrag_agent",
+            logicrag_enabled=True,
+            logicrag_max_subproblems=4,
+            logicrag_max_ranks=3,
+            logicrag_rank_top_k=2,
+            logicrag_memory_chars=800,
+            logicrag_plan_max_tokens=256,
+            logicrag_summary_max_tokens=128,
+            answer_max_tokens=128,
+        )
+        fake_llm = FakeLogicLLM(settings)
+        with patch("agent.reasoning.solver.load_logicrag_runtime_config", return_value=build_runtime_config()):
+            solver = Solver(FakeLogicRetriever(), RuleEvidenceCompressor(max_chars=1200, top_k=3), fake_llm)
+
+        result = solver.solve(question)
+
+        self.assertIn("rank_runs", result.metadata)
+        self.assertIn("sufficiency", result.metadata["rank_runs"][0])
 
     def test_financial_calculator_enabled_records_metric_extraction_metadata(self):
         question = Question(

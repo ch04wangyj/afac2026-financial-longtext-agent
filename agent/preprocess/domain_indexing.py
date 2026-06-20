@@ -34,6 +34,7 @@ def build_extra_index_fields(chunk: Chunk | Mapping[str, Any]) -> list[str]:
         fields.extend(YEAR_UNIT_RE.findall(text))
         fields.extend(extract_query_entities(title)[:8])
         fields.extend(extract_query_entities(text)[:8])
+        fields.extend(_build_financial_expansion_fields(title=title, section=section, text=text))
     elif domain == "financial_contracts":
         fields.extend(_present_terms(text, TRANSACTION_TERMS))
         fields.extend(_present_terms(section, ["重大资产重组", "募集说明书", "交易概况"]))
@@ -85,6 +86,41 @@ def _as_row(chunk: Chunk | Mapping[str, Any]) -> dict[str, Any]:
 
 def _present_terms(text: str, candidates: list[str]) -> list[str]:
     return [item for item in candidates if item in text]
+
+
+def _build_financial_expansion_fields(*, title: str, section: str, text: str) -> list[str]:
+    expansions: list[str] = []
+    company_terms = extract_company_like_terms(title)
+    years = YEAR_UNIT_RE.findall(text)
+    if "股份回购" in text or "回购计划" in text:
+        subject = company_terms[0] if company_terms else "公司"
+        year = years[0] if years else ""
+        prefix = f"{subject} {year}".strip()
+        expansions.append(f"结论重述: {prefix} 连续实施股份回购方案".strip())
+        expansions.append(f"问法扩展: {subject} 股份回购计划".strip())
+    if "营业收入" in text and ("增长" in text or "同比" in text):
+        subject = company_terms[0] if company_terms else "公司"
+        expansions.append(f"结论重述: {subject} 营业收入增长情况".strip())
+    if "归属于母公司所有者的净利润" in text or "归属于上市公司股东的净利润" in text:
+        subject = company_terms[0] if company_terms else "公司"
+        expansions.append(f"问法扩展: {subject} 归母净利润".strip())
+    if section:
+        expansions.append(f"可能回答: {section}")
+    return _dedupe([item for item in expansions if item.strip()])
+
+
+def extract_company_like_terms(title: str) -> list[str]:
+    candidates = re.findall(r"[\u4e00-\u9fffA-Za-z]+(?:集团股份有限公司|股份有限公司|集团有限公司|有限公司|集团)", title)
+    simplified: list[str] = []
+    for item in candidates:
+        value = item
+        for suffix in ("集团股份有限公司", "股份有限公司", "集团有限公司", "有限公司", "集团"):
+            if len(value) > len(suffix) and value.endswith(suffix):
+                value = value[: -len(suffix)]
+                break
+        if value:
+            simplified.append(value)
+    return _dedupe(simplified)
 
 
 def _dedupe(items: list[str]) -> list[str]:

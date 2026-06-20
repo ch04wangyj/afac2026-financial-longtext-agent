@@ -140,6 +140,28 @@ class RetrievalResult:
 
 
 @dataclass
+class EvidencePack:
+    """一组结构化展开后的证据块，保留 anchor 与成员列表。"""
+
+    pack_id: str
+    doc_id: str
+    anchor_chunk_id: str
+    member_chunk_ids: list[str]
+    score: float
+    source: str
+    query: str
+    text: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "EvidencePack":
+        return cls(**data)
+
+
+@dataclass
 class AnswerResult:
     """单题最终答案、证据、Token 和原始模型输出。"""
 

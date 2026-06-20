@@ -6,6 +6,10 @@ from agent.index.tokenizer import tokenize
 from agent.retrieve.targets import RetrievalTarget, question_with_options
 from agent.schemas import Question, RetrievalResult
 
+METRIC_HINTS = ("营业收入", "净利润", "现金流", "分红", "每股", "派现", "股息")
+CLAUSE_CONSEQUENCE_HINTS = ("处罚", "罚款", "扣减", "减分", "责令", "不得", "期限")
+GENERIC_PAGE_HINTS = ("审计报告", "公允反映", "坚持依法合规", "客观公正", "原则", "财务报表")
+
 
 
 def rerank_retrieval_results(
@@ -33,6 +37,7 @@ def rerank_retrieval_results(
         number_overlap = len(set(target.numbers) & set(result.metadata.get("numbers", [])))
         date_overlap = len(set(target.dates) & set(result.metadata.get("dates", [])))
         query_overlap = len(query_terms & evidence_terms) / max(1, len(query_terms))
+
         structure_bonus = 0.0
         if result.metadata.get("clause_id"):
             structure_bonus += 0.15
@@ -40,6 +45,14 @@ def rerank_retrieval_results(
             structure_bonus += 0.05
         if result.metadata.get("chunk_type") in {"table", "figure"}:
             structure_bonus += 0.10 if target.evidence_intent in {"number", "comparison"} else 0.04
+
+        metric_block_bonus = 0.18 if any(hint in text for hint in METRIC_HINTS) else 0.0
+        clause_consequence_bonus = 0.18 if any(hint in text for hint in CLAUSE_CONSEQUENCE_HINTS) else 0.0
+        generic_page_penalty = 0.22 if any(hint in text for hint in GENERIC_PAGE_HINTS) and not (metric_block_bonus or clause_consequence_bonus) else 0.0
+        evidence_density_bonus = 0.0
+        if any(char.isdigit() for char in text) and (metric_block_bonus or clause_consequence_bonus or target.evidence_intent in {"comparison", "number"}):
+            evidence_density_bonus += 0.12
+
         doc_bonus = 0.10 if target.doc_scope and result.doc_id in set(target.doc_scope) else 0.0
         duplicate_penalty = 0.08 if seen_texts.get(text.strip(), 0) else 0.0
         rerank_score = (
@@ -50,7 +63,11 @@ def rerank_retrieval_results(
             + date_overlap * 0.12
             + query_overlap * 0.35
             + structure_bonus
+            + metric_block_bonus
+            + clause_consequence_bonus
+            + evidence_density_bonus
             + doc_bonus
+            - generic_page_penalty
             - duplicate_penalty
         )
         result.metadata["rerank_features"] = {
@@ -61,6 +78,10 @@ def rerank_retrieval_results(
             "date_overlap": date_overlap,
             "query_overlap": round(query_overlap, 6),
             "structure_bonus": round(structure_bonus, 6),
+            "metric_block_bonus": round(metric_block_bonus, 6),
+            "clause_consequence_bonus": round(clause_consequence_bonus, 6),
+            "evidence_density_bonus": round(evidence_density_bonus, 6),
+            "generic_page_penalty": round(generic_page_penalty, 6),
             "doc_bonus": round(doc_bonus, 6),
             "duplicate_penalty": round(duplicate_penalty, 6),
         }

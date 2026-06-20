@@ -13,7 +13,7 @@
 
 当前应采用：
 
-1. 默认主路：`mixed + question_options`，因为 A 组 doc_id 代理评估里综合命中最稳。
+1. 正式默认主路：`doc_first_bm25f_expansion`，即 BM25F-lite + doc-first local expansion/aggregation + offline expansion-field-enhanced index。
 2. 纠错主路：`crag_lite`，当首轮检索置信不足时触发图式/规则补检索。
 3. 多跳主路：`logic_lite_rrf`，先用规则实体和选项构造子查询；后续按 staged rollout 演进到 `logicrag_qwen_rrf`，不直接跳到 full-agent。
 4. B 榜盲搜候选：`linear_entity_rrf` + 文档级索引，后续演进成 relation-free hierarchical graph。
@@ -78,7 +78,7 @@ python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_opt
 
 | Rank | Variant | hit@1 | hit@5 | hit@10 | recall@10 | all_gold@10 | mrr@10 | 当前判断 |
 |---:|---|---:|---:|---:|---:|---:|---:|---|
-| 1 | `question_options` | 0.780 | 0.970 | 1.000 | 0.915 | 0.810 | 0.858 | 默认主路仍最稳 |
+| 1 | `question_options` | 0.780 | 0.970 | 1.000 | 0.915 | 0.810 | 0.858 | 历史 sparse baseline，不再作为正式默认 |
 | 2 | `rule_multi_rrf` | 0.690 | 0.920 | 0.980 | 0.908 | 0.820 | 0.788 | 补召回可用，top-rank 弱 |
 | 3 | `crag_lite` | 0.800 | 0.950 | 0.990 | 0.905 | 0.810 | 0.867 | Hit@1/MRR 最好，可做纠错主路 |
 | 4 | `logic_lite_rrf` | 0.650 | 0.930 | 0.980 | 0.887 | 0.780 | 0.758 | 财报召回有增益，适合逐选项前置 |
@@ -98,7 +98,8 @@ python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_opt
 
 ### V1.1：保持主线稳定
 
-- 默认 `question_options`。
+- 默认 `doc_first_bm25f_expansion`。
+- `question_options` 仅保留为 legacy sparse baseline / 对照项。
 - `crag_lite` 只在首轮低置信题触发。
 - `logic_lite_rrf` 仅作为多选/财报候选补召回。
 - `graph_lite_rrf`、`linear_entity_rrf` 不进入默认排序，只保留实验开关。

@@ -78,7 +78,7 @@ def test_build_logicrag_rrf_queries_uses_monkeypatched_planner(monkeypatch):
     queries = logicrag.build_logicrag_rrf_queries(question, max_subproblems=4, max_ranks=3)
 
     assert planner_calls == [("q1", 4, 3)]
-    assert queries[0] == question.question
+    assert queries[0].startswith(question.question)
     assert any("受益所有人" in query for query in queries)
     assert any("保存客户身份资料" in query for query in queries)
     assert len(queries) == len(set(queries))
@@ -130,6 +130,9 @@ def test_retrieve_rankwise_evidence_propagates_non_empty_memory_anchor():
 
     assert len(rank_runs) == 2
     assert combined
-    assert len(rank_runs[0]["queries"]) == 2
-    assert len(rank_runs[1]["queries"]) == 3
+    assert rank_runs[0]["seed_results"] == []
+    assert rank_runs[1]["seed_results"] == []
+    assert len(rank_runs[0]["queries"]) == 1
+    assert len(rank_runs[1]["queries"]) == 2
+    assert rank_runs[0]["packs"]
     assert sum("受益所有人" in query for query in rank_runs[1]["queries"]) >= 2

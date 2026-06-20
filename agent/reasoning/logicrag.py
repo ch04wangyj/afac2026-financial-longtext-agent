@@ -9,7 +9,7 @@ from agent.retrieve.context import build_evidence_packs, select_results_from_pac
 from agent.retrieve.expansion import build_short_hypothetical_query, build_sparse_feedback_query
 from agent.retrieve.fusion import reciprocal_rank_fusion
 from agent.retrieve.rerank import rerank_retrieval_results
-from agent.retrieve.targets import build_retrieval_target, merge_retrieval_targets, question_with_options
+from agent.retrieve.targets import analyze_evidence_sufficiency, build_retrieval_target, merge_retrieval_targets, question_with_options
 from agent.schemas import LogicNode, LogicPlan, Question
 
 
@@ -348,7 +348,8 @@ def retrieve_rankwise_evidence(
             packs = []
             selected_results = []
         final_results = selected_results or reranked[:fused_top_k]
-        rank_runs.append({**group, "queries": rank_queries, "seed_results": seed_results, "results": final_results, "packs": packs})
+        sufficiency = analyze_evidence_sufficiency(group["target"], [item.evidence_text for item in final_results])
+        rank_runs.append({**group, "queries": rank_queries, "seed_results": seed_results, "results": final_results, "packs": packs, "sufficiency": sufficiency})
         prior_memories.append(
             {
                 "rank": group["rank"],

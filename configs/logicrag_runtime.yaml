@@ -6,29 +6,56 @@ qwen:
 
 thinking_profiles:
   answer_single_pass:
+    level: low
     enabled: false
     max_tokens: 384
   logicrag_planner:
+    level: high
     enabled: true
     max_tokens: 1024
   logicrag_rank_summary:
+    level: medium
     enabled: true
     max_tokens: 640
   logicrag_final_compose:
+    level: high
     enabled: true
     max_tokens: 1024
   option_judgement:
+    level: low
     enabled: false
     max_tokens: 192
   multi_option_fallback:
+    level: medium
     enabled: true
     max_tokens: 512
+  multi_logicrag_option_planner:
+    level: low
+    enabled: false
+    max_tokens: 160
+  multi_logicrag_option_verdict:
+    level: low
+    enabled: false
+    max_tokens: 192
+  multi_logicrag_option_retry:
+    level: low
+    enabled: true
+    max_tokens: 192
+  multi_logicrag_numeric_verifier:
+    level: low
+    enabled: true
+    max_tokens: 320
 
 logicrag:
   enabled: true
+  execution_mode: paper_faithful_core
+  retrieval_backend: paper_contract_embedding
+  dynamic_dag_augmentation: true
+  append_unresolved_after_current_rank: true
+  sampling_without_replacement: true
   max_subproblems: 6
   max_ranks: 4
-  rank_top_k: 12
+  rank_top_k: 5
   memory_chars: 4500
 
 concurrency:
@@ -39,6 +66,8 @@ concurrency:
 
 a_board:
   option_matrix_enabled: false
+  multi_logicrag_enabled: true
+  multi_logicrag_retry_enabled: true
   coverage_gate_enabled: false
   force_doc_coverage_for_a_board: true
   use_doc_ids_as_hint_only: false

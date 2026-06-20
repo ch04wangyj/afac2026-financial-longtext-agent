@@ -17,6 +17,7 @@ DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "logicrag_runtime.yaml"
 class ThinkingProfile:
     """单个推理步骤的 thinking 开关与 token 预算。"""
 
+    level: str = "medium"
     enabled: bool = True
     max_tokens: int = 512
 
@@ -36,9 +37,14 @@ class LogicRAGSection:
     """LogicRAG 主流程参数。"""
 
     enabled: bool = True
+    execution_mode: str = "paper_faithful_core"
+    retrieval_backend: str = "paper_contract_embedding"
+    dynamic_dag_augmentation: bool = True
+    append_unresolved_after_current_rank: bool = True
+    sampling_without_replacement: bool = True
     max_subproblems: int = 6
     max_ranks: int = 4
-    rank_top_k: int = 12
+    rank_top_k: int = 5
     memory_chars: int = 4500
 
 
@@ -47,6 +53,8 @@ class ABoardRuntimeConfig:
     """A 榜质量模式参数。"""
 
     option_matrix_enabled: bool = False
+    multi_logicrag_enabled: bool = True
+    multi_logicrag_retry_enabled: bool = True
     coverage_gate_enabled: bool = False
     force_doc_coverage_for_a_board: bool = True
     use_doc_ids_as_hint_only: bool = False
@@ -94,6 +102,21 @@ def load_logicrag_runtime_config(path: Path | None = None) -> LogicRAGRuntimeCon
 
     logicrag = LogicRAGSection(
         enabled=_as_bool((raw.get("logicrag") or {}).get("enabled", LogicRAGSection.enabled)),
+        execution_mode=str((raw.get("logicrag") or {}).get("execution_mode", LogicRAGSection.execution_mode)),
+        retrieval_backend=str((raw.get("logicrag") or {}).get("retrieval_backend", LogicRAGSection.retrieval_backend)),
+        dynamic_dag_augmentation=_as_bool(
+            (raw.get("logicrag") or {}).get("dynamic_dag_augmentation", LogicRAGSection.dynamic_dag_augmentation)
+        ),
+        append_unresolved_after_current_rank=_as_bool(
+            (raw.get("logicrag") or {}).get(
+                "append_unresolved_after_current_rank", LogicRAGSection.append_unresolved_after_current_rank
+            )
+        ),
+        sampling_without_replacement=_as_bool(
+            (raw.get("logicrag") or {}).get(
+                "sampling_without_replacement", LogicRAGSection.sampling_without_replacement
+            )
+        ),
         max_subproblems=int((raw.get("logicrag") or {}).get("max_subproblems", LogicRAGSection.max_subproblems)),
         max_ranks=int((raw.get("logicrag") or {}).get("max_ranks", LogicRAGSection.max_ranks)),
         rank_top_k=int((raw.get("logicrag") or {}).get("rank_top_k", LogicRAGSection.rank_top_k)),
@@ -114,6 +137,12 @@ def load_logicrag_runtime_config(path: Path | None = None) -> LogicRAGRuntimeCon
     a_board = ABoardRuntimeConfig(
         option_matrix_enabled=_as_bool(
             (raw.get("a_board") or {}).get("option_matrix_enabled", ABoardRuntimeConfig.option_matrix_enabled)
+        ),
+        multi_logicrag_enabled=_as_bool(
+            (raw.get("a_board") or {}).get("multi_logicrag_enabled", ABoardRuntimeConfig.multi_logicrag_enabled)
+        ),
+        multi_logicrag_retry_enabled=_as_bool(
+            (raw.get("a_board") or {}).get("multi_logicrag_retry_enabled", ABoardRuntimeConfig.multi_logicrag_retry_enabled)
         ),
         coverage_gate_enabled=_as_bool(
             (raw.get("a_board") or {}).get("coverage_gate_enabled", ABoardRuntimeConfig.coverage_gate_enabled)
@@ -150,6 +179,7 @@ def load_logicrag_runtime_config(path: Path | None = None) -> LogicRAGRuntimeCon
 
     thinking_profiles = {
         name: ThinkingProfile(
+            level=str((data or {}).get("level", ThinkingProfile.level)).strip().lower(),
             enabled=_as_bool((data or {}).get("enabled", ThinkingProfile.enabled)),
             max_tokens=int((data or {}).get("max_tokens", ThinkingProfile.max_tokens)),
         )
@@ -177,12 +207,16 @@ def _read_yaml(path: Path) -> dict:
 
 def _with_default_profiles(profiles: dict[str, ThinkingProfile]) -> dict[str, ThinkingProfile]:
     defaults = {
-        "answer_single_pass": ThinkingProfile(enabled=False, max_tokens=384),
-        "logicrag_planner": ThinkingProfile(enabled=True, max_tokens=1024),
-        "logicrag_rank_summary": ThinkingProfile(enabled=True, max_tokens=640),
-        "logicrag_final_compose": ThinkingProfile(enabled=True, max_tokens=1024),
-        "option_judgement": ThinkingProfile(enabled=False, max_tokens=192),
-        "multi_option_fallback": ThinkingProfile(enabled=True, max_tokens=512),
+        "answer_single_pass": ThinkingProfile(level="low", enabled=False, max_tokens=384),
+        "logicrag_planner": ThinkingProfile(level="high", enabled=True, max_tokens=1024),
+        "logicrag_rank_summary": ThinkingProfile(level="medium", enabled=True, max_tokens=640),
+        "logicrag_final_compose": ThinkingProfile(level="high", enabled=True, max_tokens=1024),
+        "option_judgement": ThinkingProfile(level="low", enabled=False, max_tokens=192),
+        "multi_option_fallback": ThinkingProfile(level="medium", enabled=True, max_tokens=512),
+        "multi_logicrag_option_planner": ThinkingProfile(level="low", enabled=False, max_tokens=160),
+        "multi_logicrag_option_verdict": ThinkingProfile(level="low", enabled=False, max_tokens=192),
+        "multi_logicrag_option_retry": ThinkingProfile(level="low", enabled=True, max_tokens=192),
+        "multi_logicrag_numeric_verifier": ThinkingProfile(level="low", enabled=True, max_tokens=320),
     }
     merged = dict(defaults)
     merged.update(profiles)
@@ -200,6 +234,23 @@ def _apply_env_overrides(config: LogicRAGRuntimeConfig) -> LogicRAGRuntimeConfig
     )
     logicrag = LogicRAGSection(
         enabled=_as_bool(os.getenv("AFAC_LOGICRAG_ENABLED", str(config.logicrag.enabled))),
+        execution_mode=os.getenv("AFAC_LOGICRAG_EXECUTION_MODE", config.logicrag.execution_mode),
+        retrieval_backend=os.getenv("AFAC_LOGICRAG_RETRIEVAL_BACKEND", config.logicrag.retrieval_backend),
+        dynamic_dag_augmentation=_as_bool(
+            os.getenv("AFAC_LOGICRAG_DYNAMIC_DAG_AUGMENTATION", str(config.logicrag.dynamic_dag_augmentation))
+        ),
+        append_unresolved_after_current_rank=_as_bool(
+            os.getenv(
+                "AFAC_LOGICRAG_APPEND_UNRESOLVED_AFTER_CURRENT_RANK",
+                str(config.logicrag.append_unresolved_after_current_rank),
+            )
+        ),
+        sampling_without_replacement=_as_bool(
+            os.getenv(
+                "AFAC_LOGICRAG_SAMPLING_WITHOUT_REPLACEMENT",
+                str(config.logicrag.sampling_without_replacement),
+            )
+        ),
         max_subproblems=int(os.getenv("AFAC_LOGICRAG_MAX_SUBPROBLEMS", str(config.logicrag.max_subproblems))),
         max_ranks=int(os.getenv("AFAC_LOGICRAG_MAX_RANKS", str(config.logicrag.max_ranks))),
         rank_top_k=int(os.getenv("AFAC_LOGICRAG_RANK_TOP_K", str(config.logicrag.rank_top_k))),
@@ -208,6 +259,12 @@ def _apply_env_overrides(config: LogicRAGRuntimeConfig) -> LogicRAGRuntimeConfig
     a_board = ABoardRuntimeConfig(
         option_matrix_enabled=_as_bool(
             os.getenv("AFAC_A_BOARD_OPTION_MATRIX_ENABLED", str(config.a_board.option_matrix_enabled))
+        ),
+        multi_logicrag_enabled=_as_bool(
+            os.getenv("AFAC_A_BOARD_MULTI_LOGICRAG_ENABLED", str(config.a_board.multi_logicrag_enabled))
+        ),
+        multi_logicrag_retry_enabled=_as_bool(
+            os.getenv("AFAC_A_BOARD_MULTI_LOGICRAG_RETRY_ENABLED", str(config.a_board.multi_logicrag_retry_enabled))
         ),
         coverage_gate_enabled=_as_bool(
             os.getenv("AFAC_A_BOARD_COVERAGE_GATE_ENABLED", str(config.a_board.coverage_gate_enabled))
@@ -252,9 +309,10 @@ def _apply_env_overrides(config: LogicRAGRuntimeConfig) -> LogicRAGRuntimeConfig
     profiles = dict(config.thinking_profiles)
     for name, profile in list(profiles.items()):
         prefix = f"AFAC_LOGICRAG_PROFILE_{_normalize_name(name)}"
+        level = os.getenv(f"{prefix}_LEVEL", profile.level).strip().lower()
         enabled = _as_bool(os.getenv(f"{prefix}_ENABLED", str(profile.enabled)))
         max_tokens = int(os.getenv(f"{prefix}_MAX_TOKENS", str(profile.max_tokens)))
-        profiles[name] = ThinkingProfile(enabled=enabled, max_tokens=max_tokens)
+        profiles[name] = ThinkingProfile(level=level, enabled=enabled, max_tokens=max_tokens)
 
     return LogicRAGRuntimeConfig(
         qwen=qwen,

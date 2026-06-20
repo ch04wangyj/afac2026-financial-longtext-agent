@@ -4,11 +4,16 @@ import unittest
 
 from agent.index.bm25 import BM25SearchIndex
 from agent.retrieve.retriever import Retriever
-from agent.retrieve.variants import retrieve_with_variant
+from agent.retrieve.variants import get_variant, retrieve_with_variant
 from agent.schemas import Chunk, Question
 
 
 class RetrievalVariantsTest(unittest.TestCase):
+    def test_formal_default_doc_first_variant_name_resolves(self):
+        variant = get_variant("doc_first_bm25f_expansion")
+
+        self.assertEqual(variant.name, "doc_first_bm25f_expansion")
+
     def test_oracle_restricts_to_gold_docs(self):
         chunks = [
             Chunk("c1", "gold", "insurance", 1, "", "", "身故保险金 现金价值", [], [], []),
@@ -203,6 +208,165 @@ class RetrievalVariantsTest(unittest.TestCase):
         self.assertEqual(results[0].doc_id, "doc-byd")
         self.assertIn("score_breakdown", results[0].metadata)
         self.assertIn("structured", results[0].metadata["score_breakdown"]["weights"])
+
+    def test_bm25f_lite_uses_expansion_style_extra_index_fields_for_lexical_mismatch(self):
+        chunks = [
+            Chunk(
+                "c-expansion",
+                "doc-midea",
+                "financial_reports",
+                1,
+                "股东回报",
+                "",
+                "公司自2019年起连续实施股份回购计划，用于股权激励及员工持股计划。",
+                [],
+                ["2019 年"],
+                [],
+                {
+                    "title": "annual_midea_2024_report",
+                    "extra_index_fields": [
+                        "美的集团",
+                        "2019 年",
+                        "股份回购",
+                        "结论重述: 自2019年起连续实施股份回购方案",
+                    ],
+                },
+            ),
+            Chunk(
+                "c-other",
+                "doc-other",
+                "financial_reports",
+                1,
+                "经营情况",
+                "",
+                "公司继续推进限制性股票激励计划。",
+                [],
+                ["2025 年"],
+                [],
+                {"title": "annual_other_2025_report", "extra_index_fields": ["股权激励"]},
+            ),
+        ]
+        index = BM25SearchIndex.build(chunks, tokenizer_mode="mixed")
+
+        results = index.search(
+            "美的集团 2019 连续实施 股份回购方案",
+            top_k=2,
+            source="probe",
+            scoring_mode="bm25f_lite",
+        )
+
+        self.assertTrue(results)
+        self.assertEqual(results[0].doc_id, "doc-midea")
+        self.assertIn("structured", results[0].metadata["score_breakdown"]["matched_fields"])
+
+    def test_doc_first_bm25f_expansion_variant_returns_doc_first_results(self):
+        chunks = [
+            Chunk(
+                "c-target",
+                "doc-midea",
+                "financial_reports",
+                1,
+                "股东回报",
+                "",
+                "公司自2019年起连续实施股份回购计划，用于股权激励及员工持股计划。",
+                [],
+                ["2019 年"],
+                [],
+                {
+                    "title": "annual_midea_2024_report",
+                    "extra_index_fields": [
+                        "美的集团",
+                        "股份回购",
+                        "2019 年",
+                        "结论重述: 美的 2019 年 连续实施股份回购方案",
+                    ],
+                },
+            ),
+            Chunk(
+                "c-other",
+                "doc-other",
+                "financial_reports",
+                1,
+                "股权激励",
+                "",
+                "公司继续推进限制性股票激励计划并进行回购注销。",
+                [],
+                ["2025 年"],
+                [],
+                {"title": "annual_other_2025_report", "extra_index_fields": ["股权激励", "回购注销"]},
+            ),
+        ]
+        index = BM25SearchIndex.build(chunks, tokenizer_mode="mixed")
+        question = Question(
+            qid="q-doc-first",
+            domain="financial_reports",
+            split="A",
+            question="美的集团自2019年起连续实施了股份回购方案。",
+            options={"A": "正确", "B": "错误"},
+            answer_format="mcq",
+            doc_ids=["doc-midea"],
+        )
+
+        results = retrieve_with_variant(index, question, "doc_first_bm25f_expansion", top_k=3)
+
+        self.assertTrue(results)
+        self.assertEqual(results[0].doc_id, "doc-midea")
+        self.assertEqual(results[0].source, "doc_first_bm25f_expansion")
+
+    def test_retriever_can_use_doc_first_bm25f_expansion_strategy(self):
+        chunks = [
+            Chunk(
+                "c-target",
+                "doc-midea",
+                "financial_reports",
+                1,
+                "股东回报",
+                "",
+                "公司自2019年起连续实施股份回购计划，用于股权激励及员工持股计划。",
+                [],
+                ["2019 年"],
+                [],
+                {
+                    "title": "annual_midea_2024_report",
+                    "extra_index_fields": [
+                        "美的集团",
+                        "股份回购",
+                        "2019 年",
+                        "结论重述: 美的 2019 年 连续实施股份回购方案",
+                    ],
+                },
+            ),
+            Chunk(
+                "c-other",
+                "doc-other",
+                "financial_reports",
+                1,
+                "股权激励",
+                "",
+                "公司继续推进限制性股票激励计划并进行回购注销。",
+                [],
+                ["2025 年"],
+                [],
+                {"title": "annual_other_2025_report", "extra_index_fields": ["股权激励", "回购注销"]},
+            ),
+        ]
+        index = BM25SearchIndex.build(chunks, tokenizer_mode="mixed")
+        retriever = Retriever(index, strategy="doc_first_bm25f_expansion")
+        question = Question(
+            qid="q-retriever-doc-first",
+            domain="financial_reports",
+            split="A",
+            question="美的集团自2019年起连续实施了股份回购方案。",
+            options={"A": "正确", "B": "错误"},
+            answer_format="mcq",
+            doc_ids=["doc-midea"],
+        )
+
+        results = retriever.retrieve(question)
+
+        self.assertTrue(results)
+        self.assertEqual(results[0].doc_id, "doc-midea")
+        self.assertEqual(results[0].source, "doc_first_bm25f_expansion")
 
     def test_logicrag_agent_retriever_keeps_broad_recall_default_search(self):
         chunks = [Chunk("c1", "doc1", "regulation", 1, "", "", "受益所有人 身份资料", [], [], [], {})]

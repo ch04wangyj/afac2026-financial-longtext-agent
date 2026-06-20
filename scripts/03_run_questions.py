@@ -28,7 +28,7 @@ def main() -> None:
     """执行题目求解；真实调用前建议用 --limit 控制规模。"""
     parser = argparse.ArgumentParser(description="Run retrieval + Qwen answering for A group questions.")
     parser.add_argument("--dry-run", action="store_true", help="Do not call Qwen; emit deterministic dummy answers.")
-    parser.add_argument("--a-board-quality", action="store_true", help="Enable A-board coverage gate, option matrix, and financial calculator.")
+    parser.add_argument("--a-board-quality", action="store_true", help="Enable A-board LogicRAG retrieval mode with doc-scoped coverage gate and financial calculator.")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of questions for smoke tests.")
     parser.add_argument("--domains", nargs="*", default=None, help="Optional domains to include.")
     parser.add_argument("--index", type=Path, default=None)
@@ -60,6 +60,10 @@ def main() -> None:
     index = BM25SearchIndex.load(index_path)
     doc_index_path = settings.index_dir / "document_bm25_index.pkl"
     doc_index = DocumentSearchIndex.load(doc_index_path) if doc_index_path.exists() else None
+    print(
+        f"retrieval_strategy={settings.retrieval_strategy} index={index_path} doc_index_loaded={doc_index is not None}",
+        flush=True,
+    )
     retriever = Retriever(
         index,
         doc_index=doc_index,
@@ -102,8 +106,11 @@ def main() -> None:
 
 
 def _enable_a_board_quality_mode() -> None:
-    """通过环境变量打开 A 榜质量模式，避免手改 YAML。"""
-    os.environ["AFAC_A_BOARD_OPTION_MATRIX_ENABLED"] = "true"
+    """通过环境变量打开 A 榜 LogicRAG 检索优化模式。"""
+    os.environ["AFAC_LOGICRAG_ENABLED"] = "true"
+    os.environ["AFAC_RETRIEVAL_STRATEGY"] = "logicrag_agent"
+    os.environ["AFAC_A_BOARD_OPTION_MATRIX_ENABLED"] = "false"
+    os.environ["AFAC_ENABLE_MULTI_OPTION_JUDGEMENT"] = "false"
     os.environ["AFAC_A_BOARD_COVERAGE_GATE_ENABLED"] = "true"
     os.environ["AFAC_A_BOARD_FINANCIAL_CALCULATOR_ENABLED"] = "true"
     os.environ["AFAC_A_BOARD_USE_DOC_IDS_AS_HINT_ONLY"] = "false"

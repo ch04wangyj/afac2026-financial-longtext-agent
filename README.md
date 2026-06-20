@@ -96,7 +96,7 @@ python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_opt
 ## LogicRAG Experimental Modes
 
 > **注意：LogicRAG 目前仍是实验开关，不是默认主线。**
-> 现阶段默认推荐主线仍是 `question_options` / `logic_lite_rrf` / `crag_lite` 一类稳健方案；只有在小样本验证收益明确时，才继续扩大 LogicRAG 使用范围。
+> 当前正式默认检索主线已经切换为 `doc_first_bm25f_expansion`：即 **BM25F-lite + doc-first local expansion/aggregation + offline expansion-field-enhanced index**。`logic_lite_rrf` / `crag_lite` / `logicrag_qwen_rrf` / `logicrag_agent` 仍作为实验或对照分支存在，而不是默认正式线上链路。
 
 ### 1) Retrieval-only：`logicrag_qwen_rrf`
 
@@ -134,8 +134,8 @@ outputs/samples/compare/<baseline>__vs__<candidate>/comparison.md
 
 ### 3) 推荐使用顺序
 
-1. 先跑默认稳健链路，建立 baseline。
-2. 再跑 `logicrag_qwen_rrf` 看 retrieval proxy 是否优于 `logic_lite_rrf`。
+1. 先跑正式默认链路 `doc_first_bm25f_expansion`，建立 baseline。
+2. 再跑 `logicrag_qwen_rrf` 看 retrieval proxy 是否优于实验对照（如 `logic_lite_rrf`）。
 3. 只有 retrieval-only 结果达标，再打开 `logicrag_agent` 做 smoke / sample20。
 4. 如果 Token 明显上升但 retrieval 或答案质量没有稳定改善，则保持 LogicRAG 为实验分支，不升级为默认主线。
 
@@ -196,18 +196,37 @@ outputs/a_full_adaptive/run_report.md
 
 ## Current Valid Baseline Scope
 
-当前允许作为正式比较对象的基线范围只保留：
+当前允许作为正式比较对象的基线范围应区分“正式默认主线”和“实验/对照分支”：
 
-- `question_options`
-- `logic_lite_rrf`
-- `crag_lite`
+- 正式默认主线：`doc_first_bm25f_expansion`
+- 实验/对照分支：`logic_lite_rrf`
+- 实验/对照分支：`crag_lite`
+- 传统稀疏对照：`question_options`
 
 其中：
 
-- `logicrag_qwen_rrf` / `logicrag_agent` 只作为 ARS 实验分支
+- `logicrag_qwen_rrf` / `logicrag_agent` 只作为 ARS / LogicRAG 实验分支
 - 不再把旧 adaptive/full evidence 方案当作默认主线或 rollout 依据
+- `question_options` 继续保留为 legacy sparse baseline，但不再是正式默认线上链路
 
 ## Development Rules
+
+### Retrieval strategy rollback
+
+如果需要临时回滚默认检索策略，不要改代码默认值，优先通过环境变量覆盖：
+
+```powershell
+AFAC_RETRIEVAL_STRATEGY=hybrid python scripts\03_run_questions.py --dry-run --limit 2
+AFAC_RETRIEVAL_STRATEGY=bm25f_lite_rrf python scripts\03_run_questions.py --dry-run --limit 2
+AFAC_RETRIEVAL_STRATEGY=logicrag_agent python scripts\03_run_questions.py --dry-run --limit 2
+```
+
+回滚前后都应检查启动日志中的：
+- `retrieval_strategy=...`
+- `index=...`
+- `doc_index_loaded=True/False`
+
+如果部署环境没有同步新的 `processed_data/chunks.jsonl`、`bm25_index.pkl`、`document_bm25_index.pkl`，优先补齐索引产物，再决定是否真正回滚策略。
 
 - 不使用 embedding、向量数据库或非 Qwen reranker。
 - `.env`、`processed_data/`、`outputs/` 不提交。
@@ -218,6 +237,6 @@ outputs/a_full_adaptive/run_report.md
 - 思考预算按步骤分层配置在 `configs/logicrag_runtime.yaml`：`logicrag_planner` / `logicrag_final_compose` 默认高预算，`logicrag_rank_summary` 中预算，普通答题与逐选项判断默认低预算或关闭 thinking；仅在 `multi_option_fallback` 这类复核步骤再回升预算。
 - 逐选项判断使用独立证据预算：默认 `AFAC_OPTION_TOP_K_EVIDENCE=6`、`AFAC_OPTION_EVIDENCE_CHARS=5000`；研报自动提升到 full 预算，避免遗漏长文档趋势证据。
 - 原版 GraphRAG/LightRAG/HippoRAG/RAPTOR/Self-RAG/OpenSPG 不进入默认链路；只允许无 embedding、无非 Qwen 模型的 lite 思想作为实验分支。
-- V1 默认 `question_options` 主检索；多选题已启用逐选项判断；B 榜无 `doc_ids` 时使用文档级 BM25 盲搜候选。
-- V2 后续再加入 Qwen 子问题 DAG、IterKey、Calculator、IRCoT-lite 和低置信 CoVe。
+- V1 默认 `doc_first_bm25f_expansion` 主检索：BM25F-lite + doc-first local expansion/aggregation + offline expansion-field-enhanced index；多选题已启用逐选项判断；B 榜无 `doc_ids` 时使用文档级 BM25 盲搜候选。
+- 如需临时回退旧路径，只通过 `AFAC_RETRIEVAL_STRATEGY` 显式指定（如 `hybrid`、`bm25f_lite_rrf`、`logicrag_agent`），不修改代码默认值。
 

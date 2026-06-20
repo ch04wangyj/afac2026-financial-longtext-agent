@@ -25,6 +25,10 @@ class AnswerParserTest(unittest.TestCase):
     def test_english_field_names_do_not_create_fallback_answer(self):
         self.assertEqual(parse_answer('{"confidence": 0.5, "reason": "no answer yet"', "mcq"), "")
 
+    def test_multi_explicit_empty_json_answer_does_not_leak_letters_from_reason(self):
+        text = '{"answer": "", "confidence": 0.1, "reason": "选项A错误，选项B错误，选项C错误，选项D错误"}'
+        self.assertEqual(parse_answer(text, "multi"), "")
+
     def test_confidence_from_fenced_json(self):
         text = '```json\n{"answer":"A","confidence":0.9,"reason":"x"}\n```'
         self.assertEqual(_extract_confidence(text), 0.9)

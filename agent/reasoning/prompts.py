@@ -35,7 +35,9 @@ def build_answer_messages(question: Question, evidence: list[RetrievalResult]) -
 规则:
 - mcq/tf 只能输出单个大写字母。
 - multi 输出所有正确选项，按字母排序，无分隔符。
-- 证据不足时仍需给出最可能答案，并降低 confidence。
+- 证据不足时仅可降低 confidence；若必须作答，也只能给出受限猜测。
+- 不要为了弥补检索不足而展开泛化推理。
+- 不要输出冗长背景解释来补偿证据缺口。
 """
     return [
         {"role": "system", "content": f"{role} 不得使用外部知识，不得编造证据。"},
@@ -178,8 +180,14 @@ def build_logicrag_plan_messages(
 - 最多输出 {max_subproblems} 个子问题。
 - 最多 {max_ranks} 个依赖层级。
 - 每个子问题必须能直接用于检索证据。
-- depends_on 只能引用前面节点 id。
+- 每个子问题必须指向可直接检索的具体事实、条款、数值或定义。
+- 优先把子问题写成可直接检索的目标事实、目标数值、目标日期、目标条件或目标条款。
+- 如果原题本质上是在比较、判断阈值、核对日期、核对条款或核对定义，子问题应先分别定位这些可检索对象，而不是只把原题换一种说法。
+- depends_on 表示必须先解决的逻辑前置子问题，只能引用前面节点 id。
+- 同一依赖层级的子问题后续会合并为一次检索；只有真正可以并行共享证据的子问题才应放在同一层。
 - 不要输出空节点、重复节点或无意义改写。
+- 不要只把原题换一种说法；要让每个子问题都对应一个更容易命中证据的检索目标。
+- 不要把背景介绍、概念解释或大范围综述写成子问题。
 
 只输出 JSON:
 {{
@@ -249,7 +257,7 @@ def build_logicrag_final_compose_messages(
         for node in getattr(logic_plan, "nodes", [])
     ) or "无"
     memory_text = "\n".join(f"rank={item.get('rank')}: {item.get('summary', '')}" for item in rank_memories) or "无"
-    user = f"""你现在执行 LogicRAG final compose。请综合规划、分层记忆与原始证据作答。
+    user = f"""你现在执行 LogicRAG final compose。请以分层记忆作为主线，并仅把最终层证据当作收尾核验来作答。
 
 题型: {question.answer_format}
 题目: {question.question}
@@ -271,8 +279,10 @@ LogicRAG 规划:
 规则:
 - mcq/tf 只能输出单个大写字母。
 - multi 输出所有正确选项，按字母排序，无分隔符。
-- 严格依据证据与分层记忆，不得使用外部知识。
-- 证据不足时仍需给出最可能答案，并降低 confidence。
+- 严格依据分层记忆与最终层证据，不得使用外部知识。
+- 分层记忆优先于最终层原文堆砌。
+- 不要为了补偿上游检索缺口而扩写背景或常识推理。
+- 若分层记忆与最终证据仍不足，只能降低 confidence。
 """
     return [
         {"role": "system", "content": f"{role} 你负责 LogicRAG 最终组合回答，不得编造证据。"},

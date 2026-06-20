@@ -82,10 +82,10 @@ class Settings:
     option_judgement_enable_thinking: bool = False
     enable_multi_option_judgement: bool = True
     logicrag_enabled: bool = False
-    retrieval_strategy: str = "hybrid"
+    retrieval_strategy: str = "doc_first_bm25f_expansion"
     logicrag_max_subproblems: int = 6
     logicrag_max_ranks: int = 4
-    logicrag_rank_top_k: int = 12
+    logicrag_rank_top_k: int = 5
     logicrag_memory_chars: int = 4500
     logicrag_plan_max_tokens: int = 768
     logicrag_summary_max_tokens: int = 384
@@ -97,6 +97,7 @@ class Settings:
     bm25_workers: int = 8
 
     @classmethod
+
     def from_env(cls) -> "Settings":
         """从环境变量和本地私有配置构造 Settings。"""
         runtime = load_logicrag_runtime_config()

@@ -5,11 +5,11 @@ from __future__ import annotations
 from agent.index.bm25 import BM25SearchIndex
 from agent.index.document_index import DocumentSearchIndex
 from agent.reasoning.logicrag import build_logicrag_rrf_queries
+from agent.retrieve.doc_first import retrieve_doc_first
 from agent.retrieve.fusion import reciprocal_rank_fusion
 from agent.retrieve.query import build_rule_queries
 from agent.retrieve.targets import question_with_options
 from agent.schemas import Question, RetrievalResult
-
 
 class Retriever:
     """封装单路 question_options 和多路规则 RRF 检索。"""
@@ -43,6 +43,20 @@ class Retriever:
                 source="question_options",
                 scoring_mode=scoring_mode,
             )
+
+        if self.strategy == "doc_first_bm25f_expansion":
+            keyword_bundles = [tuple(query.split()) for query in build_rule_queries(question)]
+            results = retrieve_doc_first(
+                self.index,
+                keyword_bundles=keyword_bundles,
+                top_docs=max(self.blind_top_docs, self.fused_top_k),
+                top_k=self.fused_top_k,
+            )
+            if filter_doc_ids is not None:
+                results = [result for result in results if result.doc_id in filter_doc_ids]
+            for result in results:
+                result.source = "doc_first_bm25f_expansion"
+            return results[: self.fused_top_k]
 
         if self.strategy == "bm25f_lite_rrf":
             ranked_lists = [
