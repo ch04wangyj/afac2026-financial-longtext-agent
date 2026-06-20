@@ -1,5 +1,4 @@
 """轻量 BM25 检索实现。
-
 这里保留纯 Python fallback，避免 bm25s/rank_bm25 安装问题阻塞比赛链路。
 索引只使用词法特征，不使用 embedding。
 """
@@ -8,9 +7,10 @@ from __future__ import annotations
 
 import math
 import pickle
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
+from agent.preprocess.chunkers import extract_dates, extract_numbers
 from agent.index.tokenizer import tokenize, tokenize_chunk
 from agent.schemas import Chunk, RetrievalResult
 
@@ -25,7 +25,6 @@ class SimpleBM25:
         b: float = 0.75,
         max_query_terms: int = 160,
     ) -> None:
-        # 预计算文档长度、词频、倒排表和 IDF，后续查询只遍历命中的 term posting。
         self.corpus_tokens = corpus_tokens
         self.k1 = k1
         self.b = b
@@ -46,7 +45,6 @@ class SimpleBM25:
         }
 
     def score(self, query_tokens: list[str], doc_idx: int) -> float:
-        """计算单个文档对查询的 BM25 分数，主要用于测试和调试。"""
         score = 0.0
         freqs = self.term_freqs[doc_idx]
         doc_len = self.doc_lens[doc_idx] or 1
@@ -60,11 +58,9 @@ class SimpleBM25:
         return score
 
     def get_scores(self, query_tokens: list[str]) -> list[float]:
-        """返回全量文档分数；语义直观但比倒排搜索慢。"""
         return [self.score(query_tokens, idx) for idx in range(self.doc_count)]
 
     def get_score_items(self, query_tokens: list[str]) -> list[tuple[int, float]]:
-        """只遍历查询词命中的 posting，返回非零分文档。"""
         scores: dict[int, float] = {}
         for token in self._select_query_terms(query_tokens):
             idf = self.idf.get(token, 0.0)
@@ -77,7 +73,6 @@ class SimpleBM25:
         return list(scores.items())
 
     def _select_query_terms(self, query_tokens: list[str]) -> list[str]:
-        """长查询只保留高 IDF 词，防止选项拼接后查询过宽。"""
         unique = set(query_tokens)
         if len(unique) <= self.max_query_terms:
             return list(unique)
@@ -87,6 +82,17 @@ class SimpleBM25:
 class BM25SearchIndex:
     """可持久化的 chunk 检索索引。"""
 
+    FIELD_AWARE_WEIGHTS: dict[str, float] = {
+        "base": 1.0,
+        "title": 0.30,
+        "section": 0.2,
+        "clause_id": 0.30,
+        "numbers": 0.35,
+        "dates": 0.3,
+        "caption": 0.15,
+        "structured": 0.55,
+    }
+
     def __init__(
         self,
         chunks: list[Chunk],
@@ -95,12 +101,40 @@ class BM25SearchIndex:
     ) -> None:
         self.chunks = chunks
         self.tokenizer_mode = tokenizer_mode
+        self.default_search_mode = "bm25"
         self.corpus_tokens = corpus_tokens or [tokenize_chunk(chunk, mode=tokenizer_mode) for chunk in chunks]
         self.engine = SimpleBM25(self.corpus_tokens)
+        self.field_token_corpora = self._build_field_token_corpora()
+        self.field_engines = {
+            field: SimpleBM25(tokens, max_query_terms=32)
+            for field, tokens in self.field_token_corpora.items()
+        }
+        self.chunk_by_id: dict[str, Chunk] = {chunk.chunk_id: chunk for chunk in self.chunks}
+        self.doc_chunks_ordered: dict[str, list[Chunk]] = defaultdict(list)
+        self.doc_chunk_pos: dict[str, int] = {}
+        self.page_to_chunk_ids: dict[tuple[str, int], list[str]] = defaultdict(list)
+        self.clause_to_chunk_ids: dict[tuple[str, str], list[str]] = defaultdict(list)
+        self.section_to_chunk_ids: dict[tuple[str, str], list[str]] = defaultdict(list)
+        for chunk in self.chunks:
+            self.doc_chunks_ordered[chunk.doc_id].append(chunk)
+        for doc_id, doc_chunks in self.doc_chunks_ordered.items():
+            page_counts: dict[int, int] = defaultdict(int)
+            for pos, chunk in enumerate(doc_chunks):
+                self.doc_chunk_pos[chunk.chunk_id] = pos
+                chunk.metadata.setdefault("doc_seq", pos)
+                if chunk.page is not None:
+                    chunk.metadata.setdefault("page_chunk_idx", page_counts[chunk.page])
+                    page_counts[chunk.page] += 1
+                    self.page_to_chunk_ids[(doc_id, int(chunk.page))].append(chunk.chunk_id)
+                clause = str(chunk.clause_id or "").strip()
+                if clause:
+                    self.clause_to_chunk_ids[(doc_id, clause)].append(chunk.chunk_id)
+                section_key = self._normalize_section(chunk.section)
+                if section_key:
+                    self.section_to_chunk_ids[(doc_id, section_key)].append(chunk.chunk_id)
 
     @classmethod
     def build(cls, chunks: list[Chunk], tokenizer_mode: str = "mixed") -> "BM25SearchIndex":
-        """从 chunk 列表构建索引。"""
         return cls(chunks, tokenizer_mode=tokenizer_mode)
 
     def search(
@@ -109,8 +143,12 @@ class BM25SearchIndex:
         top_k: int = 20,
         filter_doc_ids: set[str] | None = None,
         source: str = "bm25",
+        scoring_mode: str | None = None,
     ) -> list[RetrievalResult]:
-        """执行 BM25 检索，并可按 doc_id 限定候选文档。"""
+        scoring_mode = scoring_mode or self.default_search_mode
+        if scoring_mode == "bm25f_lite":
+            return self._field_aware_search(query, top_k=top_k, filter_doc_ids=filter_doc_ids, source=source)
+
         query_tokens = tokenize(query, mode=self.tokenizer_mode)
         ranked = sorted(self.engine.get_score_items(query_tokens), key=lambda item: item[1], reverse=True)
         results: list[RetrievalResult] = []
@@ -120,31 +158,205 @@ class BM25SearchIndex:
             chunk = self.chunks[idx]
             if filter_doc_ids and chunk.doc_id not in filter_doc_ids:
                 continue
-            results.append(
-                RetrievalResult(
-                    chunk_id=chunk.chunk_id,
-                    doc_id=chunk.doc_id,
-                    domain=chunk.domain,
-                    score=float(score),
-                    source=source,
-                    query=query,
-                    evidence_text=chunk.text,
-                    metadata={
-                        "page": chunk.page,
-                        "section": chunk.section,
-                        "clause_id": chunk.clause_id,
-                        "numbers": chunk.numbers,
-                        "dates": chunk.dates,
-                        "title": chunk.metadata.get("title", ""),
-                    },
-                )
-            )
+            results.append(self.result_from_chunk(chunk, score=float(score), source=source, query=query))
             if len(results) >= top_k:
                 break
         return results
 
+    def _field_aware_search(
+        self,
+        query: str,
+        top_k: int,
+        filter_doc_ids: set[str] | None,
+        source: str,
+    ) -> list[RetrievalResult]:
+        query_tokens = tokenize(query, mode=self.tokenizer_mode)
+        if not query_tokens:
+            return []
+
+        query_numbers = extract_numbers(query)
+        query_dates = extract_dates(query)
+        component_scores = self._collect_component_scores(query_tokens, query_numbers=query_numbers, query_dates=query_dates)
+        if not component_scores:
+            return []
+
+        candidate_scores = self._filter_component_scores(component_scores, filter_doc_ids)
+        if not candidate_scores:
+            return []
+
+        normalized_scores = self._normalize_component_scores(candidate_scores)
+        ranked: list[tuple[int, float]] = []
+        for idx, parts in normalized_scores.items():
+            chunk = self.chunks[idx]
+            total = sum(parts.get(field, 0.0) * self.FIELD_AWARE_WEIGHTS.get(field, 0.0) for field in self.FIELD_AWARE_WEIGHTS)
+            if total <= 0:
+                continue
+            ranked.append((idx, float(total)))
+
+        ranked.sort(key=lambda item: item[1], reverse=True)
+        results: list[RetrievalResult] = []
+        for idx, total_score in ranked[:top_k]:
+            chunk = self.chunks[idx]
+            result = self.result_from_chunk(chunk, score=float(total_score), source=source, query=query)
+            raw_parts = component_scores.get(idx, {})
+            norm_parts = normalized_scores.get(idx, {})
+            matched_fields = [
+                field for field, score in norm_parts.items() if field != "base" and score > 0
+            ]
+            result.metadata["score_breakdown"] = {
+                "mode": "bm25f_lite",
+                "weights": dict(self.FIELD_AWARE_WEIGHTS),
+                "raw": {field: round(float(raw_parts.get(field, 0.0)), 6) for field in self.FIELD_AWARE_WEIGHTS},
+                "normalized": {field: round(float(norm_parts.get(field, 0.0)), 6) for field in self.FIELD_AWARE_WEIGHTS},
+                "matched_fields": matched_fields,
+                "total": round(float(total_score), 6),
+            }
+            results.append(result)
+        return results
+
+    def _collect_component_scores(
+        self,
+        query_tokens: list[str],
+        *,
+        query_numbers: list[str],
+        query_dates: list[str],
+    ) -> dict[int, dict[str, float]]:
+        combined: dict[int, dict[str, float]] = defaultdict(dict)
+        for idx, score in self.engine.get_score_items(query_tokens):
+            if score > 0:
+                combined[idx]["base"] = float(score)
+
+        for field in ("title", "section", "clause_id", "caption", "structured"):
+            for idx, score in self.field_engines[field].get_score_items(query_tokens):
+                if score > 0:
+                    combined[idx][field] = float(score)
+
+        if query_numbers:
+            number_tokens = tokenize(" ".join(query_numbers), mode=self.tokenizer_mode)
+            for idx, score in self.field_engines["numbers"].get_score_items(number_tokens):
+                if score > 0:
+                    combined[idx]["numbers"] = float(score)
+
+        if query_dates:
+            date_tokens = tokenize(" ".join(query_dates), mode=self.tokenizer_mode)
+            for idx, score in self.field_engines["dates"].get_score_items(date_tokens):
+                if score > 0:
+                    combined[idx]["dates"] = float(score)
+        return combined
+
+    def _filter_component_scores(
+        self,
+        component_scores: dict[int, dict[str, float]],
+        filter_doc_ids: set[str] | None,
+    ) -> dict[int, dict[str, float]]:
+        if not filter_doc_ids:
+            return component_scores
+        return {
+            idx: parts
+            for idx, parts in component_scores.items()
+            if self.chunks[idx].doc_id in filter_doc_ids
+        }
+
+    def _normalize_component_scores(self, component_scores: dict[int, dict[str, float]]) -> dict[int, dict[str, float]]:
+        maxima = {
+            field: max((parts.get(field, 0.0) for parts in component_scores.values()), default=0.0)
+            for field in self.FIELD_AWARE_WEIGHTS
+        }
+        normalized: dict[int, dict[str, float]] = {}
+        for idx, parts in component_scores.items():
+            normalized[idx] = {
+                field: (parts.get(field, 0.0) / maxima[field]) if maxima[field] > 0 else 0.0
+                for field in self.FIELD_AWARE_WEIGHTS
+            }
+        return normalized
+
+    def _build_field_token_corpora(self) -> dict[str, list[list[str]]]:
+        corpora = {field: [] for field in self.FIELD_AWARE_WEIGHTS if field != "base"}
+        for chunk in self.chunks:
+            corpora["title"].append(tokenize(str(chunk.metadata.get("title", "")), mode=self.tokenizer_mode))
+            corpora["section"].append(tokenize(chunk.section, mode=self.tokenizer_mode))
+            corpora["clause_id"].append(tokenize(chunk.clause_id, mode=self.tokenizer_mode))
+            corpora["numbers"].append(tokenize(" ".join(chunk.numbers), mode=self.tokenizer_mode))
+            corpora["dates"].append(tokenize(" ".join(chunk.dates), mode=self.tokenizer_mode))
+            corpora["caption"].append(tokenize(str(chunk.metadata.get("caption", "")), mode=self.tokenizer_mode))
+            corpora["structured"].append(
+                tokenize(
+                    " ".join(str(item) for item in chunk.metadata.get("extra_index_fields", []) if str(item).strip()),
+                    mode=self.tokenizer_mode,
+                )
+            )
+        return corpora
+
+    def result_from_chunk(self, chunk: Chunk, *, score: float, source: str, query: str) -> RetrievalResult:
+        return RetrievalResult(
+            chunk_id=chunk.chunk_id,
+            doc_id=chunk.doc_id,
+            domain=chunk.domain,
+            score=float(score),
+            source=source,
+            query=query,
+            evidence_text=chunk.text,
+            metadata={
+                "page": chunk.page,
+                "section": chunk.section,
+                "clause_id": chunk.clause_id,
+                "numbers": chunk.numbers,
+                "dates": chunk.dates,
+                "title": chunk.metadata.get("title", ""),
+                "chunk_type": chunk.metadata.get("chunk_type", "text"),
+                "caption": chunk.metadata.get("caption", ""),
+                "extra_index_fields": chunk.metadata.get("extra_index_fields", []),
+                "doc_seq": chunk.metadata.get("doc_seq", self.doc_chunk_pos.get(chunk.chunk_id, 0)),
+                "page_chunk_idx": chunk.metadata.get("page_chunk_idx", 0),
+            },
+        )
+
+    def get_chunk(self, chunk_id: str) -> Chunk | None:
+        return self.chunk_by_id.get(chunk_id)
+
+    def get_doc_neighbors(
+        self,
+        chunk_id: str,
+        *,
+        left: int = 1,
+        right: int = 1,
+        allowed_doc_ids: set[str] | None = None,
+    ) -> list[Chunk]:
+        chunk = self.get_chunk(chunk_id)
+        if chunk is None:
+            return []
+        if allowed_doc_ids and chunk.doc_id not in allowed_doc_ids:
+            return []
+        doc_chunks = self.doc_chunks_ordered.get(chunk.doc_id, [])
+        pos = self.doc_chunk_pos.get(chunk_id, 0)
+        start = max(0, pos - left)
+        end = min(len(doc_chunks), pos + right + 1)
+        return [item for item in doc_chunks[start:end] if not allowed_doc_ids or item.doc_id in allowed_doc_ids]
+
+    def get_same_page_chunks(self, doc_id: str, page: int | None, *, allowed_doc_ids: set[str] | None = None) -> list[Chunk]:
+        if page is None:
+            return []
+        if allowed_doc_ids and doc_id not in allowed_doc_ids:
+            return []
+        return [self.chunk_by_id[chunk_id] for chunk_id in self.page_to_chunk_ids.get((doc_id, int(page)), [])]
+
+    def get_same_clause_chunks(self, doc_id: str, clause_id: str, *, allowed_doc_ids: set[str] | None = None) -> list[Chunk]:
+        clause_id = str(clause_id or "").strip()
+        if not clause_id:
+            return []
+        if allowed_doc_ids and doc_id not in allowed_doc_ids:
+            return []
+        return [self.chunk_by_id[chunk_id] for chunk_id in self.clause_to_chunk_ids.get((doc_id, clause_id), [])]
+
+    def get_same_section_chunks(self, doc_id: str, section: str, *, allowed_doc_ids: set[str] | None = None) -> list[Chunk]:
+        section_key = self._normalize_section(section)
+        if not section_key:
+            return []
+        if allowed_doc_ids and doc_id not in allowed_doc_ids:
+            return []
+        return [self.chunk_by_id[chunk_id] for chunk_id in self.section_to_chunk_ids.get((doc_id, section_key), [])]
+
     def save(self, path: Path) -> None:
-        """保存最小必要数据；BM25 引擎加载时重新构造。"""
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("wb") as f:
             pickle.dump(
@@ -158,7 +370,6 @@ class BM25SearchIndex:
 
     @classmethod
     def load(cls, path: Path) -> "BM25SearchIndex":
-        """从磁盘恢复索引。"""
         with path.open("rb") as f:
             payload = pickle.load(f)
         return cls(
@@ -166,3 +377,7 @@ class BM25SearchIndex:
             payload["corpus_tokens"],
             tokenizer_mode=payload.get("tokenizer_mode", "mixed"),
         )
+
+    @staticmethod
+    def _normalize_section(section: str) -> str:
+        return " ".join(str(section or "").split()).lower()

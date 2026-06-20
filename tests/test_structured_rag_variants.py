@@ -34,6 +34,14 @@ class StructuredRagVariantsTest(unittest.TestCase):
         self.assertIn("2024年", entities)
         self.assertIn("受益所有人", entities)
 
+    def test_extract_query_entities_keeps_company_and_product_signals(self):
+        text = "比亚迪 2025 年年度报告显示研发投入增长，平安e生保等待期为 30 日。"
+        entities = extract_query_entities(text)
+        self.assertIn("比亚迪", entities)
+        self.assertIn("2025 年", entities)
+        self.assertIn("研发投入", entities)
+        self.assertTrue(any("平安e生保" in item for item in entities))
+
     def test_structured_query_builders_return_deduped_queries(self):
         for builder in (build_logic_queries, build_linear_entity_queries, build_graph_lite_queries):
             queries = builder(self.question)

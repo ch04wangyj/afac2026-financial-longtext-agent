@@ -9,11 +9,13 @@ from agent.preprocess.chunkers import extract_dates, extract_numbers
 from agent.reasoning.logicrag import build_logicrag_rrf_queries
 from agent.retrieve.fusion import reciprocal_rank_fusion
 from agent.retrieve.query import build_rule_queries
+from agent.retrieve.rerank import rerank_retrieval_results
 from agent.retrieve.structured_queries import (
     build_graph_lite_queries,
     build_linear_entity_queries,
     build_logic_queries,
 )
+from agent.retrieve.targets import build_retrieval_target
 from agent.schemas import Question, RetrievalResult
 
 
@@ -32,6 +34,11 @@ RAG_VARIANTS = [
     RagVariant("option_rrf", "RRF over one query per option"),
     RagVariant("rule_multi_rrf", "RRF over rule-generated queries with numbers/dates/options"),
     RagVariant("field_boosted_rrf", "rule_multi_rrf plus clause/number/date/title boosts"),
+    RagVariant("bm25f_lite_rrf", "RRF over rule queries with BM25F-lite field-aware sparse scoring"),
+    RagVariant(
+        "broad_sparse_structured_rerank",
+        "Broad sparse recall via field_boosted_rrf, then structured rerank/coverage correction",
+    ),
     RagVariant("logic_lite_rrf", "LogicRAG-lite: query-time subproblem DAG approximated by option/entity subqueries"),
     RagVariant("logicrag_qwen_rrf", "LogicRAG retrieval-first: Qwen-planned subproblems fused with BM25/RRF"),
     RagVariant("linear_entity_rrf", "LinearRAG-lite: linear high-signal entity queries"),
@@ -86,8 +93,34 @@ def retrieve_with_variant(
             for query in build_rule_queries(question)
         ]
         fused = reciprocal_rank_fusion(ranked_lists, top_k=top_k * 2)
-        boosted = _field_boost(question, fused)
+        boosted = _field_boost(question, fused, source_name=variant.name)
         return boosted[:top_k]
+
+    if variant.name == "broad_sparse_structured_rerank":
+        ranked_lists = [
+            index.search(query, top_k=top_k, filter_doc_ids=filter_doc_ids, source=variant.name)
+            for query in build_rule_queries(question)
+        ]
+        fused = reciprocal_rank_fusion(ranked_lists, top_k=top_k * 2)
+        boosted = _field_boost(question, fused, source_name=variant.name)
+        target = build_retrieval_target(question, question.question)
+        reranked = rerank_retrieval_results(question, target, boosted, top_k=top_k)
+        for result in reranked:
+            result.source = variant.name
+        return reranked[:top_k]
+
+    if variant.name == "bm25f_lite_rrf":
+        ranked_lists = [
+            index.search(
+                query,
+                top_k=top_k,
+                filter_doc_ids=filter_doc_ids,
+                source=variant.name,
+                scoring_mode="bm25f_lite",
+            )
+            for query in build_rule_queries(question)
+        ]
+        return reciprocal_rank_fusion(ranked_lists, top_k=top_k)
 
     if variant.name == "logic_lite_rrf":
         ranked_lists = [
@@ -97,10 +130,17 @@ def retrieve_with_variant(
         return reciprocal_rank_fusion(ranked_lists, top_k=top_k)
 
     if variant.name == "logicrag_qwen_rrf":
-        ranked_lists = [
+        seed_results = index.search(
+            _question_with_options(question),
+            top_k=top_k,
+            filter_doc_ids=filter_doc_ids,
+            source=f"{variant.name}:seed",
+        )
+        ranked_lists = [seed_results]
+        ranked_lists.extend(
             index.search(query, top_k=top_k, filter_doc_ids=filter_doc_ids, source=variant.name)
-            for query in build_logicrag_rrf_queries(question)
-        ]
+            for query in build_logicrag_rrf_queries(question, seed_results=seed_results)
+        )
         return reciprocal_rank_fusion(ranked_lists, top_k=top_k)
 
     if variant.name == "linear_entity_rrf":
@@ -149,7 +189,7 @@ def _question_with_options(question: Question) -> str:
     )
 
 
-def _field_boost(question: Question, results: list[RetrievalResult]) -> list[RetrievalResult]:
+def _field_boost(question: Question, results: list[RetrievalResult], *, source_name: str) -> list[RetrievalResult]:
     """基于条款号、数字、日期、标题和选项命中做轻量加分。"""
     q_text = _question_with_options(question)
     q_numbers = set(extract_numbers(q_text))
@@ -173,7 +213,7 @@ def _field_boost(question: Question, results: list[RetrievalResult]) -> list[Ret
             if option[:12] and option[:12] in evidence:
                 score += 0.02
         result.score = float(score)
-        result.source = "field_boosted_rrf"
+        result.source = source_name
         boosted.append(result)
     return sorted(boosted, key=lambda item: item.score, reverse=True)
 

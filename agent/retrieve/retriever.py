@@ -7,6 +7,7 @@ from agent.index.document_index import DocumentSearchIndex
 from agent.reasoning.logicrag import build_logicrag_rrf_queries
 from agent.retrieve.fusion import reciprocal_rank_fusion
 from agent.retrieve.query import build_rule_queries
+from agent.retrieve.targets import question_with_options
 from agent.schemas import Question, RetrievalResult
 
 
@@ -28,24 +29,39 @@ class Retriever:
         self.fused_top_k = fused_top_k
         self.strategy = strategy
         self.blind_top_docs = blind_top_docs
+        self.index.default_search_mode = "bm25"
 
     def retrieve(self, question: Question, restrict_to_doc_ids: bool = True) -> list[RetrievalResult]:
-        """检索题目相关证据；A 组默认可按题目 doc_ids 限定候选文档。"""
         filter_doc_ids = self._candidate_doc_filter(question, restrict_to_doc_ids)
+        question_options = self._question_with_options(question)
+        scoring_mode = "bm25f_lite" if self.strategy == "bm25f_lite_rrf" else None
         if self.strategy == "question_options":
             return self.index.search(
-                query=self._question_with_options(question),
+                query=question_options,
                 top_k=self.fused_top_k,
                 filter_doc_ids=filter_doc_ids,
                 source="question_options",
+                scoring_mode=scoring_mode,
             )
+
+        if self.strategy == "bm25f_lite_rrf":
+            ranked_lists = [
+                self.index.search(
+                    query=query,
+                    top_k=self.top_k_per_query,
+                    filter_doc_ids=filter_doc_ids,
+                    source="bm25f_lite_rrf",
+                    scoring_mode="bm25f_lite",
+                )
+                for query in build_rule_queries(question)
+            ]
+            return reciprocal_rank_fusion(ranked_lists, top_k=self.fused_top_k)
 
         ranked_lists: list[list[RetrievalResult]] = []
         if self.strategy == "hybrid":
-            # 主查询使用“题干+选项”，实测 A 组 doc 命中最稳。
             ranked_lists.append(
                 self.index.search(
-                    query=self._question_with_options(question),
+                    query=question_options,
                     top_k=self.top_k_per_query,
                     filter_doc_ids=filter_doc_ids,
                     source="question_options",
@@ -54,7 +70,14 @@ class Retriever:
 
         queries = build_rule_queries(question)
         if self.strategy in {"logicrag", "logicrag_agent"}:
-            queries = build_logicrag_rrf_queries(question)
+            seed_results = self.index.search(
+                query=question_options,
+                top_k=self.top_k_per_query,
+                filter_doc_ids=filter_doc_ids,
+                source="logicrag_seed",
+            )
+            ranked_lists.append(seed_results)
+            queries = build_logicrag_rrf_queries(question, seed_results=seed_results)
 
         for query in queries:
             ranked_lists.append(
@@ -69,13 +92,9 @@ class Retriever:
 
     @staticmethod
     def _question_with_options(question: Question) -> str:
-        """拼接题干和选项，避免选项实体未出现在题干时漏召回。"""
-        return f"{question.question} " + " ".join(
-            f"{key} {value}" for key, value in sorted(question.options.items())
-        )
+        return question_with_options(question)
 
     def _candidate_doc_filter(self, question: Question, restrict_to_doc_ids: bool) -> set[str] | None:
-        """A 榜用题目 doc_ids；B 榜无 doc_ids 时用文档级 BM25 盲搜候选。"""
         if restrict_to_doc_ids and question.doc_ids:
             return set(question.doc_ids)
         if self.doc_index and (not question.doc_ids or not restrict_to_doc_ids):

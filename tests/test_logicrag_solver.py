@@ -26,13 +26,21 @@ def build_thinking_profiles() -> dict[str, ThinkingProfile]:
 
 
 
-def build_runtime_config(*, option_matrix_enabled: bool = False, coverage_gate_enabled: bool = False) -> LogicRAGRuntimeConfig:
+def build_runtime_config(
+    *,
+    option_matrix_enabled: bool = False,
+    multi_logicrag_enabled: bool = True,
+    multi_logicrag_retry_enabled: bool = True,
+    coverage_gate_enabled: bool = False,
+) -> LogicRAGRuntimeConfig:
     return LogicRAGRuntimeConfig(
         qwen=QwenRuntimeConfig(),
         thinking_profiles=build_thinking_profiles(),
         logicrag=LogicRAGSection(),
         a_board=ABoardRuntimeConfig(
             option_matrix_enabled=option_matrix_enabled,
+            multi_logicrag_enabled=multi_logicrag_enabled,
+            multi_logicrag_retry_enabled=multi_logicrag_retry_enabled,
             coverage_gate_enabled=coverage_gate_enabled,
             force_doc_coverage_for_a_board=True,
             use_doc_ids_as_hint_only=False,
@@ -125,8 +133,44 @@ class LogicRAGSolverTest(unittest.TestCase):
         rank1_queries = [query for source, query in retriever.index.calls if source == "logicrag_agent_rank_1"]
         self.assertTrue(rank1_queries)
         self.assertEqual(len(rank1_queries), len(set(rank1_queries)))
-        self.assertEqual(len(rank1_queries), 3)
-        self.assertEqual(sum("上游记忆锚点" in query for query in rank1_queries), 1)
+        self.assertEqual(len(rank1_queries), 2)
+        self.assertGreaterEqual(sum("必须识别受益所有人" in query or "受益所有人识别义务" in query for query in rank1_queries), 1)
+
+    def test_logicrag_final_compose_uses_last_rank_evidence_instead_of_accumulated_raw_context(self):
+        question = Question(
+            qid="q_logicrag_last_rank",
+            domain="regulatory",
+            split="A",
+            question="根据客户尽职调查要求，银行是否必须识别受益所有人并保存身份资料？",
+            options={"A": "不需要识别受益所有人", "B": "需要识别受益所有人并保存身份资料"},
+            answer_format="mcq",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(
+            retrieval_strategy="logicrag_agent",
+            logicrag_enabled=True,
+            logicrag_max_subproblems=4,
+            logicrag_max_ranks=3,
+            logicrag_rank_top_k=2,
+            logicrag_memory_chars=800,
+            logicrag_plan_max_tokens=256,
+            logicrag_summary_max_tokens=128,
+            answer_max_tokens=128,
+        )
+        fake_llm = FakeLogicLLM(settings)
+        solver = Solver(
+            ProgressiveEvidenceRetriever(),
+            RuleEvidenceCompressor(max_chars=1200, top_k=3),
+            fake_llm,
+        )
+
+        result = solver.solve(question)
+
+        final_prompt = fake_llm.prompts[-1]
+        self.assertEqual(result.answer, "B")
+        self.assertIn("第二层证据：银行还需保存客户身份资料。", final_prompt)
+        self.assertNotIn("第一层证据：银行必须识别受益所有人。", final_prompt)
+        self.assertTrue(any("第一层证据：银行必须识别受益所有人。" in item.evidence_text for item in result.evidence))
 
     def test_logicrag_agent_respects_enable_flag(self):
         question = Question(
@@ -178,8 +222,8 @@ class LogicRAGSolverTest(unittest.TestCase):
             prior_memories=[{"rank": 0, "summary": "上游记忆锚点"}],
         )
 
-        self.assertEqual(len(queries), 3)
-        self.assertEqual(queries[:2], ["Q1", "Q2"])
+        self.assertEqual(len(queries), 2)
+        self.assertEqual(queries[0], "Q1")
         self.assertEqual(sum("上游记忆锚点" in query for query in queries), 1)
 
     def test_logicrag_agent_enables_thinking_for_every_qwen_call(self):
@@ -296,6 +340,58 @@ class LogicRAGSolverTest(unittest.TestCase):
         self.assertEqual(result.metadata["option_coverage"]["B"]["candidate_count"], 0)
         self.assertTrue(result.metadata["option_coverage"]["B"]["missing"])
 
+    def test_solver_uses_multi_logicrag_route_for_multi_questions(self):
+        question = Question(
+            qid="q_multi_logicrag",
+            domain="financial_reports",
+            split="A",
+            question="根据财报披露，以下哪些说法正确？",
+            options={"A": "2025 年收入增长", "B": "2025 年收入下降", "C": "研发费用增加"},
+            answer_format="multi",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(
+            retrieval_strategy="logicrag_agent",
+            logicrag_enabled=True,
+            answer_max_tokens=128,
+        )
+        fake_llm = FakeMultiLogicLLM(settings)
+        with patch("agent.reasoning.solver.load_logicrag_runtime_config", return_value=build_runtime_config()):
+            solver = Solver(FakeLogicRetriever(), RuleEvidenceCompressor(max_chars=1200, top_k=3), fake_llm)
+
+        result = solver.solve(question)
+
+        self.assertEqual(result.answer, "AC")
+        self.assertEqual(result.metadata["strategy"], "multi_logicrag")
+        self.assertEqual(set(result.metadata["option_runs"].keys()), {"A", "B", "C"})
+
+    def test_multi_logicrag_expands_every_uncertain_option(self):
+        question = Question(
+            qid="q_multi_retry",
+            domain="financial_reports",
+            split="A",
+            question="根据财报披露，以下哪些说法正确？",
+            options={"A": "2025 年收入增长", "B": "2025 年收入下降"},
+            answer_format="multi",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(
+            retrieval_strategy="logicrag_agent",
+            logicrag_enabled=True,
+            answer_max_tokens=128,
+        )
+        retriever = RetryAwareRetriever()
+        fake_llm = FakeRetryMultiLogicLLM(settings)
+        with patch("agent.reasoning.solver.load_logicrag_runtime_config", return_value=build_runtime_config()):
+            solver = Solver(retriever, RuleEvidenceCompressor(max_chars=1200, top_k=3), fake_llm)
+
+        result = solver.solve(question)
+
+        self.assertEqual(result.answer, "AB")
+        self.assertFalse(result.metadata["option_runs"]["A"]["retried"])
+        self.assertTrue(result.metadata["option_runs"]["B"]["retried"])
+        self.assertTrue(any(source == "multi_logicrag_retry_B" for source, _query in retriever.index.calls))
+
     def test_financial_calculator_enabled_records_metric_extraction_metadata(self):
         question = Question(
             qid="fin_calc_meta",
@@ -381,6 +477,26 @@ class OptionCoverageRetriever(FakeLogicRetriever):
         self.blind_top_docs = 4
 
 
+class RetryAwareRetriever(FakeLogicRetriever):
+    def __init__(self) -> None:
+        self.index = RetryAwareIndex()
+        self.doc_index = None
+        self.top_k_per_query = 2
+        self.fused_top_k = 3
+        self.strategy = "logicrag_agent"
+        self.blind_top_docs = 4
+
+
+class ProgressiveEvidenceRetriever(FakeLogicRetriever):
+    def __init__(self) -> None:
+        self.index = ProgressiveEvidenceIndex()
+        self.doc_index = None
+        self.top_k_per_query = 2
+        self.fused_top_k = 3
+        self.strategy = "logicrag_agent"
+        self.blind_top_docs = 4
+
+
 class FakeIndex:
     def __init__(self) -> None:
         self.calls = []
@@ -434,10 +550,77 @@ class OptionCoverageIndex:
         ]
 
 
+class RetryAwareIndex:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def search(self, query, top_k=2, filter_doc_ids=None, source="test"):
+        self.calls.append((source, query))
+        if source == "multi_logicrag_retry_B":
+            return [
+                RetrievalResult(
+                    chunk_id="rb1",
+                    doc_id="doc1",
+                    domain="financial_reports",
+                    score=1.2,
+                    source=source,
+                    query=query,
+                    evidence_text="2025 年收入并未下降，而是同比增长 12%。",
+                    metadata={"page": 4, "title": "2025年年报"},
+                )
+            ]
+        return [
+            RetrievalResult(
+                chunk_id=f"seed:{abs(hash((source, query))) % 10000}",
+                doc_id="doc1",
+                domain="financial_reports",
+                score=1.0,
+                source=source,
+                query=query,
+                evidence_text="2025 年营业收入同比增长 12%，研发费用同比增加 5%。",
+                metadata={"page": 3, "title": "2025年年报"},
+            )
+        ]
+
+
+class ProgressiveEvidenceIndex:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def search(self, query, top_k=2, filter_doc_ids=None, source="test"):
+        self.calls.append((source, query))
+        if source == "logicrag_agent_rank_1":
+            return [
+                RetrievalResult(
+                    chunk_id="p2",
+                    doc_id="doc1",
+                    domain="regulatory",
+                    score=1.8,
+                    source=source,
+                    query=query,
+                    evidence_text="第二层证据：银行还需保存客户身份资料。",
+                    metadata={"page": 2, "title": "客户尽职调查办法"},
+                )
+            ]
+        return [
+            RetrievalResult(
+                chunk_id="p1",
+                doc_id="doc1",
+                domain="regulatory",
+                score=2.0,
+                source=source,
+                query=query,
+                evidence_text="第一层证据：银行必须识别受益所有人。",
+                metadata={"page": 1, "title": "客户尽职调查办法"},
+            )
+        ]
+
+
 class FakeLogicLLM:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.calls = []
+        self.prompts = []
         self.profiles = build_thinking_profiles()
 
     def chat(
@@ -453,6 +636,7 @@ class FakeLogicLLM:
             enable_thinking = thinking_profile.enabled
         self.calls.append({"max_tokens": max_tokens, "enable_thinking": enable_thinking})
         prompt = "\n".join(message.get("content", "") for message in messages)
+        self.prompts.append(prompt)
         if "LogicRAG规划器" in prompt:
             return LLMResponse(
                 text='{"subproblems":[{"id":"n1","text":"定位受益所有人识别义务","depends_on":[]},{"id":"n2","text":"确认是否需要保存客户身份资料","depends_on":["n1"]}],"rationale":"先定位义务，再确认留存要求。"}',
@@ -515,6 +699,54 @@ class FakeOptionMatrixLLM:
             text = '{"option":"C","relation":"support","confidence":0.88,"support_evidence":["[1]"],"reason":"研发费用增加"}'
         else:
             text = '{"option":"B","relation":"insufficient","confidence":0.10,"reason":"证据不足"}'
+        return LLMResponse(text=text, usage=TokenUsage(prompt_tokens=2, completion_tokens=2))
+
+
+class FakeMultiLogicLLM:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.calls = []
+
+    def chat(self, messages, temperature=0.0, max_tokens=0, enable_thinking=None, thinking_profile=None):
+        if thinking_profile is not None:
+            max_tokens = thinking_profile.max_tokens
+            enable_thinking = thinking_profile.enabled
+        self.calls.append({"max_tokens": max_tokens, "enable_thinking": enable_thinking})
+        prompt = "\n".join(message.get("content", "") for message in messages)
+        if "2025 年收入增长" in prompt:
+            text = '{"option":"A","relation":"support","confidence":0.95,"support_evidence":["[1]"],"reason":"收入同比增长"}'
+        elif "2025 年收入下降" in prompt:
+            text = '{"option":"B","relation":"refute","confidence":0.92,"refute_evidence":["[1]"],"reason":"收入并未下降"}'
+        elif "研发费用增加" in prompt:
+            text = '{"option":"C","relation":"support","confidence":0.88,"support_evidence":["[1]"],"reason":"研发费用增加"}'
+        else:
+            raise AssertionError(f"unexpected prompt: {prompt}")
+        return LLMResponse(text=text, usage=TokenUsage(prompt_tokens=2, completion_tokens=2))
+
+
+class FakeRetryMultiLogicLLM:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.calls = []
+        self.option_counts = {"A": 0, "B": 0}
+
+    def chat(self, messages, temperature=0.0, max_tokens=0, enable_thinking=None, thinking_profile=None):
+        if thinking_profile is not None:
+            max_tokens = thinking_profile.max_tokens
+            enable_thinking = thinking_profile.enabled
+        self.calls.append({"max_tokens": max_tokens, "enable_thinking": enable_thinking})
+        prompt = "\n".join(message.get("content", "") for message in messages)
+        if "2025 年收入增长" in prompt:
+            self.option_counts["A"] += 1
+            text = '{"option":"A","relation":"support","confidence":0.95,"support_evidence":["[1]"],"reason":"收入同比增长"}'
+        elif "2025 年收入下降" in prompt:
+            self.option_counts["B"] += 1
+            if self.option_counts["B"] == 1:
+                text = '{"option":"B","relation":"insufficient","confidence":0.35,"support_evidence":[],"refute_evidence":[],"reason":"初次证据不足"}'
+            else:
+                text = '{"option":"B","relation":"support","confidence":0.85,"support_evidence":["[2]"],"refute_evidence":[],"reason":"扩检后确认正确"}'
+        else:
+            raise AssertionError(f"unexpected prompt: {prompt}")
         return LLMResponse(text=text, usage=TokenUsage(prompt_tokens=2, completion_tokens=2))
 
 
