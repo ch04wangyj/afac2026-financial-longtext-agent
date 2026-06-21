@@ -15,7 +15,7 @@ from agent.schemas import Question, RetrievalResult
 
 _VALUE_RE = re.compile(
     r"(?P<paren>[(（])?\s*(?P<value>[-+]?\d[\d,，]*(?:\.\d+)?)\s*"
-    r"(?(paren)[)）])\s*(?P<unit>%|％|元|千元|万元|亿元|万|亿|倍)?"
+    r"(?(paren)[)）])\s*(?P<unit>%|％|元|千元|百万元|万元|亿元|万|亿|倍)?"
 )
 _YEAR_RE = re.compile(r"(?:19|20)\d{2}")
 _HEADER_UNIT_RE = re.compile(r"(?:单位|币种)\s*[:：]?\s*(人民币)?\s*(元|千元|万元|亿元|万|亿)")
@@ -41,6 +41,7 @@ _METRICS = (
 _UNIT_MULTIPLIERS = {
     "元": Decimal("1"),
     "千元": Decimal("1000"),
+    "百万元": Decimal("1000000"),
     "万元": Decimal("10000"),
     "万": Decimal("10000"),
     "亿元": Decimal("100000000"),
@@ -62,6 +63,7 @@ class NumericFact:
     unit: str
     normalized_value: str
     context: str
+    extraction_mode: str
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -80,6 +82,37 @@ def compile_numeric_fact_ledger(
     for evidence_index, item in enumerate(evidence, start=1):
         text = " ".join((item.evidence_text or "").split())
         if not text:
+            continue
+        financial_row = item.metadata.get("financial_row") or {}
+        if financial_row:
+            metric = str(financial_row.get("metric") or "未识别指标")
+            context = str(financial_row.get("raw_row") or text)
+            for cell_index, cell in enumerate(financial_row.get("cells", []), start=1):
+                raw_number = str(cell.get("raw_value") or "")
+                unit = str(cell.get("unit") or financial_row.get("unit") or "")
+                negative = raw_number.startswith("(") and raw_number.endswith(")")
+                normalized = _normalize_value(raw_number.strip("()（）"), unit, negative=negative)
+                if normalized is None:
+                    continue
+                year = str(cell.get("year") or "")
+                key = (item.doc_id, item.chunk_id, metric, year, f"{normalized}:{unit}")
+                if key in seen:
+                    continue
+                seen.add(key)
+                fact = NumericFact(
+                    fact_id=f"F{evidence_index}_R{cell_index}",
+                    doc_id=item.doc_id,
+                    chunk_id=item.chunk_id,
+                    metric=metric,
+                    year=year,
+                    raw_value=raw_number,
+                    unit=unit or "未标明",
+                    normalized_value=_decimal_text(normalized),
+                    context=context,
+                    extraction_mode="financial_row",
+                )
+                facts.append((_fact_relevance(fact, query_text, item) + 1.5, fact))
+            # 行级 chunk 已提供准确列映射，不再对同一文本做邻近年份猜测。
             continue
         header_unit = _infer_header_unit(text)
         for mention_index, match in enumerate(_VALUE_RE.finditer(text), start=1):
@@ -109,6 +142,7 @@ def compile_numeric_fact_ledger(
                 unit=unit or "未标明",
                 normalized_value=_decimal_text(normalized),
                 context=context,
+                extraction_mode="text_regex",
             )
             facts.append((_fact_relevance(fact, query_text, item), fact))
 
@@ -130,7 +164,7 @@ def format_numeric_fact_ledger(ledger: dict) -> str:
     for fact in facts:
         lines.append(
             "{fact_id} | doc={doc_id} | metric={metric} | year={year} | raw={raw_value} {unit} | "
-            "normalized={normalized_value} | {context}".format(**fact)
+            "normalized={normalized_value} | mode={extraction_mode} | {context}".format(**fact)
         )
     return "\n".join(lines)
 

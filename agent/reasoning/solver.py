@@ -18,6 +18,7 @@ from agent.reasoning.claim_set_verifier import (
     calibrate_claim_verdict,
     should_run_claim_set_verification,
 )
+from agent.reasoning.calculation_dsl import build_candidate_calculations
 from agent.reasoning.fact_ledger import compile_numeric_fact_ledger
 from agent.reasoning.option_matrix import OptionVerdict, parse_option_verdict, synthesize_answer
 from agent.reasoning.retrieval_refiner import build_lightweight_refined_queries, should_trigger_retrieval_refinement
@@ -417,6 +418,11 @@ class Solver:
             if self.runtime.a_board.numeric_fact_ledger_enabled
             else {"facts": [], "fact_count": 0, "source_doc_ids": [], "missing": []}
         )
+        deterministic_calculations = (
+            build_candidate_calculations(question, fact_ledger)
+            if self.runtime.a_board.numeric_fact_ledger_enabled
+            else []
+        )
         set_verification = {
             "triggered": False,
             "local_answer": answer,
@@ -436,6 +442,7 @@ class Solver:
                     claim_runs,
                     final_evidence[: self.runtime.a_board.claim_set_verification_max_evidence_items],
                     fact_ledger,
+                    deterministic_calculations,
                 ),
                 temperature=0.0,
                 thinking_profile=set_profile,
@@ -506,6 +513,7 @@ class Solver:
                 "fallback_recovery": fallback_recovery,
                 "final_evidence_selection": final_selection_report,
                 "numeric_fact_ledger": fact_ledger,
+                "deterministic_calculations": deterministic_calculations,
                 "token_budget_policy": {
                     "max_claim_query_bundles": self.runtime.a_board.max_claim_query_bundles,
                     "max_claim_refinement_rounds": self.runtime.a_board.max_claim_refinement_rounds,

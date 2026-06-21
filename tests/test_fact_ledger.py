@@ -62,3 +62,36 @@ def test_fact_ledger_skips_plain_years_but_formats_real_values():
     rendered = format_numeric_fact_ledger(ledger)
     assert "normalized=12000000000" in rendered
     assert "doc=doc1" in rendered
+
+
+def test_fact_ledger_prefers_structured_financial_row_year_mapping():
+    evidence = [
+        RetrievalResult(
+            chunk_id="row1",
+            doc_id="doc1",
+            domain="financial_reports",
+            score=8.0,
+            source="test",
+            query="净利润",
+            evidence_text="财务指标: 净利润\n表头: 2025年 2024年\n原始行: 净利润 120 100",
+            metadata={
+                "chunk_type": "financial_metric_row",
+                "financial_row": {
+                    "metric": "净利润",
+                    "unit": "亿元",
+                    "raw_row": "净利润 120 100",
+                    "cells": [
+                        {"year": "2025", "raw_value": "120", "unit": "亿元"},
+                        {"year": "2024", "raw_value": "100", "unit": "亿元"},
+                    ],
+                },
+            },
+        )
+    ]
+
+    ledger = compile_numeric_fact_ledger(_question(), evidence)
+
+    assert {(fact["year"], fact["normalized_value"]) for fact in ledger["facts"]} == {
+        ("2024", "10000000000"),
+        ("2025", "12000000000"),
+    }

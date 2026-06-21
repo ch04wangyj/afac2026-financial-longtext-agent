@@ -129,6 +129,7 @@ def build_claim_set_verification_messages(
     claim_runs: dict[str, dict],
     evidence: list[RetrievalResult],
     fact_ledger: dict | None = None,
+    calculations: list[dict] | None = None,
 ) -> list[dict[str, str]]:
     """构造逐选项完成后的集合级 exact-match 复核 Prompt。"""
     role = DOMAIN_ROLES.get(question.domain, "你是金融长文本问答专家。")
@@ -174,6 +175,9 @@ def build_claim_set_verification_messages(
 数值事实账本:
 {format_numeric_fact_ledger(fact_ledger or {})}
 
+确定性计算结果:
+{json.dumps(calculations or [], ensure_ascii=False)}
+
 只输出 JSON:
 {{
   "answer": "A或ABCD",
@@ -187,6 +191,7 @@ def build_claim_set_verification_messages(
 - 含“均、都、双方、两份、两家、分别、所有”的选项，涉及的每份文档都必须有直接支持证据。
 - 含“且、并且、同时、以及、；”的复合选项，每个子条件都成立才可 support；任一子条件错误即 refute。
 - 数值、比例、同比、阈值和趋势只能依据数值事实账本及原始证据计算；必须统一单位，不得心算补值。
+- 若提供确定性计算结果，优先按其中绑定的 fact id、表达式和结果判断，不得改写操作数。
 - multi 必须输出所有且仅有正确选项，按字母排序；mcq/tf 只能输出一个字母。
 - answer 不得为空；即使证据仍不充分，也要给出最可能的合法选项集合并降低 confidence。
 - 若局部 verdict 冲突，以可直接定位的原始证据和账本为准，不以局部 confidence 投票。

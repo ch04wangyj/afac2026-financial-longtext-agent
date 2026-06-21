@@ -306,6 +306,8 @@ class BM25SearchIndex:
                 "chunk_type": chunk.metadata.get("chunk_type", "text"),
                 "caption": chunk.metadata.get("caption", ""),
                 "extra_index_fields": chunk.metadata.get("extra_index_fields", []),
+                "financial_row": chunk.metadata.get("financial_row", {}),
+                "parent_chunk_id": chunk.metadata.get("parent_chunk_id", ""),
                 "doc_seq": chunk.metadata.get("doc_seq", self.doc_chunk_pos.get(chunk.chunk_id, 0)),
                 "page_chunk_idx": chunk.metadata.get("page_chunk_idx", 0),
             },

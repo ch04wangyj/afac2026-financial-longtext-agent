@@ -12,6 +12,7 @@ from agent.preprocess.domain_cleaning import clean_domain_text
 from agent.preprocess.domain_indexing import build_extra_index_fields
 from agent.preprocess.domain_rules import infer_candidate_rules
 from agent.preprocess.extractors import PageText
+from agent.preprocess.financial_rows import extract_financial_metric_rows, format_financial_metric_row
 from agent.preprocess.normalization import normalize_text
 from agent.schemas import Chunk, Document
 
@@ -55,6 +56,36 @@ def chunk_document(document: Document, pages: list[PageText], max_chars: int = 1
                 continue
             chunk.metadata["extra_index_fields"] = build_extra_index_fields(chunk)
             chunks.append(chunk)
+
+        if document.domain == "financial_reports":
+            default_year_match = re.search(r"20\d{2}", document.title)
+            default_year = default_year_match.group(0) if default_year_match else ""
+            for row_idx, financial_row in enumerate(
+                extract_financial_metric_rows(cleaned_text, default_year=default_year)
+            ):
+                body = format_financial_metric_row(financial_row, title=document.title)
+                chunk = Chunk(
+                    chunk_id=_chunk_id(document.doc_id, page.page, 3000 + row_idx, body),
+                    doc_id=document.doc_id,
+                    domain=document.domain,
+                    page=page.page,
+                    section="financial_metric_row",
+                    clause_id="",
+                    text=body,
+                    tables=[financial_row["raw_row"]],
+                    numbers=extract_numbers(financial_row["raw_row"]),
+                    dates=extract_dates(financial_row["raw_row"]),
+                    metadata={
+                        "title": document.title,
+                        "path": document.path,
+                        "cleaning_rules": cleaning_rules,
+                        "chunk_type": "financial_metric_row",
+                        "parser_name": page.parser_name,
+                        "financial_row": financial_row,
+                    },
+                )
+                chunk.metadata["extra_index_fields"] = build_extra_index_fields(chunk)
+                chunks.append(chunk)
 
         for figure_idx, figure in enumerate(_iter_figure_rows(page.figures)):
             chunk = build_figure_chunk(

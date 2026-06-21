@@ -35,6 +35,20 @@ def build_extra_index_fields(chunk: Chunk | Mapping[str, Any]) -> list[str]:
         fields.extend(extract_query_entities(title)[:8])
         fields.extend(extract_query_entities(text)[:8])
         fields.extend(_build_financial_expansion_fields(title=title, section=section, text=text))
+        financial_row = metadata.get("financial_row") or {}
+        if financial_row:
+            fields.extend(
+                str(value)
+                for value in (
+                    financial_row.get("metric"),
+                    financial_row.get("raw_metric"),
+                    financial_row.get("header"),
+                    financial_row.get("unit"),
+                )
+                if value
+            )
+            for cell in financial_row.get("cells", []):
+                fields.extend(str(cell.get(key, "")) for key in ("column", "year", "raw_value", "unit") if cell.get(key))
     elif domain == "financial_contracts":
         fields.extend(_present_terms(text, TRANSACTION_TERMS))
         fields.extend(_present_terms(section, ["重大资产重组", "募集说明书", "交易概况"]))

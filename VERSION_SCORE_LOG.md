@@ -114,6 +114,17 @@
 
 ---
 
+## V11 candidate｜2026-06-21 财报指标行索引与答案级门禁
+- **得分**：待官网提交验证。
+- **相对 V10 新引入的关键改动**：
+  - 从现有财报 text chunks 确定性提取 `metric/year/value/unit/header`，生成 787 个短指标行 chunk，并接入 BM25F structured 字段。
+  - 事实账本优先使用行级单元格列映射；增加只允许 `compare/difference/ratio/growth_rate` 的计算 DSL，禁止模型生成代码和跨单位计算。
+  - 新增带当前题面、来源和关键证据的 answer-level dev set，以及 `09_eval_answer_devset.py` exact-match 门禁。
+  - 两道财报真实回归保持 `fin_a_005=ABD`、`fin_a_011=ACD`；合计 Token 从 `66,015` 降至 `55,768`（约 `-15.5%`）。
+  - 当前三题门禁为 `3/3`，仅用于回归，不代表官方 A 榜准确率。
+
+---
+
 ## 后续追加模板
 
 ```markdown

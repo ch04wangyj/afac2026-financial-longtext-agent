@@ -111,12 +111,14 @@ LogicRAG / thinking / 并发预算配置集中在：
 - `scripts/06_smoke_by_domain.py`：按领域做 smoke
 - `scripts/07_run_sample.py`：按 sampleN 运行样本集
 - `scripts/08_report_results.py`：汇总 token / evidence / format 风险
+- `scripts/09_eval_answer_devset.py`：按人工核验 dev set 计算答案 exact-match 与关键证据召回
 
 ### 维护与辅助脚本
 - `scripts/10_cleanup_outputs.py`：安全清理历史输出
 - `scripts/11_export_docling_samples.py`：导出 Docling 样本
 - `scripts/12_analyze_docling_samples.py`：分析 Docling 样本并生成规则草案
 - `scripts/12_refresh_extra_index_fields_from_existing_index.py`：基于现有索引重写 `chunks.jsonl` 的 `extra_index_fields`
+- `scripts/13_augment_financial_metric_rows.py`：从现有财报 text chunks 生成指标行，无需重新解析 PDF
 
 ---
 
@@ -182,6 +184,23 @@ python scripts\03_run_questions.py --a-board-quality
 ```
 
 该模式仍严格限制在题目给定的 `doc_ids` 内。新增组件只在质量模式启用，默认 `doc_first_bm25f_expansion` 主线行为不变。实验依据和边界见 `theory/references/notes/2026-06-21_v10-set-verification-and-fact-ledger.md`。
+
+### 财报指标行实验索引
+
+```powershell
+python scripts\13_augment_financial_metric_rows.py --output processed_data\chunks_financial_rows.jsonl
+python scripts\02_build_index.py --chunks processed_data\chunks_financial_rows.jsonl --index processed_data\index_financial_rows\bm25_index.pkl --skip-doc-index
+$env:AFAC_INDEX_DIR="processed_data\index_financial_rows"
+python scripts\07_run_sample.py --a-board-quality --qids fin_a_005 fin_a_011
+```
+
+### 答案级回归门禁
+
+```powershell
+python scripts\09_eval_answer_devset.py --results <answer_results_1.jsonl> <answer_results_2.jsonl> --strict
+```
+
+开发集位于 `devsets/answer_level_v1.jsonl`。人工标签必须绑定当前题面和数据版本；不能仅按 qid 复用官网旧示例答案。
 
 ---
 
