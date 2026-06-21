@@ -1,13 +1,17 @@
 # Outputs Layout
 
-本项目默认将运行产物写入 `outputs/`，但不再鼓励把所有文件直接散落在根目录。
+本项目默认将运行产物写入 `outputs/`。
+
+当前文档只描述仍在维护的运行面：
+- 默认主线运行
+- LogicRAG 保留实验线运行
+- sample / smoke / A100 正式输出
 
 ## 目标
 
 - 明确区分：测试输出、样本输出、A 榜 100 题正式输出
 - 让 `answer.csv / evidence.json / token_usage.json / run_report.*` 自动跟随对应运行目录
-- 让对比报告进入专门的 compare 目录
-- 让历史 probe / loose artifacts 可以通过安全脚本清理
+- 让 loose artifacts 可以通过安全脚本清理
 
 ## 目录约定
 
@@ -17,8 +21,6 @@ outputs/
     smoke/
       dry/<timestamp>_<strategy>/
       live/<timestamp>_<strategy>/
-    retrieval_compare/
-      live/<timestamp>_<output_name>/
   samples/
     sample20/
       dry/<timestamp>_<strategy>/
@@ -26,13 +28,9 @@ outputs/
     sample40/
       dry/<timestamp>_<strategy>/
       live/<timestamp>_<strategy>/
-    compare/
-      <baseline>__vs__<candidate>/
   a100/
     full100/
       live/<timestamp>_<strategy>/
-    compare/
-      <baseline>__vs__<candidate>/
 ```
 
 ## 各脚本默认行为
@@ -40,9 +38,6 @@ outputs/
 ### `scripts/03_run_questions.py`
 - 全量 100 题真实运行：`outputs/a100/full100/live/...`
 - 其他 limit / domain 子集：`outputs/tests/...`
-
-### `scripts/05_compare_rag.py`
-- 默认输出到：`outputs/tests/retrieval_compare/live/...`
 
 ### `scripts/06_smoke_by_domain.py`
 - dry-run：`outputs/tests/smoke/dry/...`
@@ -58,24 +53,21 @@ outputs/
 ### `scripts/08_report_results.py`
 - 默认把 `run_report.md / run_report.json` 写回 `--results` 所在目录
 
-### `scripts/09_compare_runs.py`
-- sample 对比：`outputs/samples/compare/...`
-- A100 对比：`outputs/a100/compare/...`
-
 ## 显式覆盖规则
 
 如果设置了 `AFAC_OUTPUTS_DIR`，脚本会优先尊重该目录，而不是自动生成规范路径。
 
-这保留了：
+适用场景：
 - 手工指定长任务输出目录
-- watcher / resume / 批量实验脚本的兼容性
+- watcher / resume 兼容
+- 单独隔离一次运行结果
 
 ## Resume 行为
 
 当脚本使用 `--resume` 且**没有**显式设置 `AFAC_OUTPUTS_DIR` 时，会在对应规范目录下寻找最近一次同策略 run 目录继续写入。
 
 建议：
-- 长任务（尤其 full A100）仍优先显式设置 `AFAC_OUTPUTS_DIR`
+- 长任务（尤其 full A100）优先显式设置 `AFAC_OUTPUTS_DIR`
 - 短任务 / dry-run 可直接依赖默认规范路径
 
 ## Cleanup
@@ -112,7 +104,7 @@ python scripts/10_cleanup_outputs.py --dry-run \
    - `run_report.md`
    - `run_report.json`
 
-2. 明显属于历史 probe / 临时 compare 的目录
+2. 明显属于历史临时输出的目录
    - `qwen_plus_*`
    - `smoke_insurance_*`
    - `compare_*`
@@ -121,7 +113,7 @@ python scripts/10_cleanup_outputs.py --dry-run \
 
 ## Git 约定
 
-`outputs/` 整体仍保持 `.gitignore`，原因：
+`outputs/` 整体保持 `.gitignore`，原因：
 - 体积大
 - 运行频繁变化
 - 不适合作为源码版本历史的一部分

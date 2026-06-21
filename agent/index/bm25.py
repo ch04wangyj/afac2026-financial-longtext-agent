@@ -1,5 +1,5 @@
 """轻量 BM25 检索实现。
-这里保留纯 Python fallback，避免 bm25s/rank_bm25 安装问题阻塞比赛链路。
+当前项目直接使用内置纯 Python sparse retrieval，不依赖额外 BM25 第三方引擎。
 索引只使用词法特征，不使用 embedding。
 """
 

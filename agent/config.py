@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent.runtime.logicrag_config import ThinkingProfile, load_logicrag_runtime_config
+from agent.runtime.strategy_contract import validate_runtime_strategy
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -139,7 +140,7 @@ class Settings:
                 "AFAC_ENABLE_MULTI_OPTION_JUDGEMENT", cls.enable_multi_option_judgement
             ),
             logicrag_enabled=_env_bool("AFAC_LOGICRAG_ENABLED", runtime.logicrag.enabled),
-            retrieval_strategy=_setting("AFAC_RETRIEVAL_STRATEGY", cls.retrieval_strategy),
+            retrieval_strategy=validate_runtime_strategy(_setting("AFAC_RETRIEVAL_STRATEGY", cls.retrieval_strategy)),
             logicrag_max_subproblems=int(
                 _setting("AFAC_LOGICRAG_MAX_SUBPROBLEMS", str(runtime.logicrag.max_subproblems))
             ),

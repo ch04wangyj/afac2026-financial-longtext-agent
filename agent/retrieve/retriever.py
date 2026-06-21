@@ -9,10 +9,12 @@ from agent.retrieve.doc_first import retrieve_doc_first
 from agent.retrieve.fusion import reciprocal_rank_fusion
 from agent.retrieve.query import build_rule_queries
 from agent.retrieve.targets import question_with_options
+from agent.runtime.strategy_contract import validate_runtime_strategy
 from agent.schemas import Question, RetrievalResult
 
+
 class Retriever:
-    """封装单路 question_options 和多路规则 RRF 检索。"""
+
 
     def __init__(
         self,
@@ -20,29 +22,20 @@ class Retriever:
         doc_index: DocumentSearchIndex | None = None,
         top_k_per_query: int = 20,
         fused_top_k: int = 30,
-        strategy: str = "hybrid",
+        strategy: str = "doc_first_bm25f_expansion",
         blind_top_docs: int = 8,
     ) -> None:
         self.index = index
         self.doc_index = doc_index
         self.top_k_per_query = top_k_per_query
         self.fused_top_k = fused_top_k
-        self.strategy = strategy
+        self.strategy = validate_runtime_strategy(strategy)
         self.blind_top_docs = blind_top_docs
         self.index.default_search_mode = "bm25"
 
     def retrieve(self, question: Question, restrict_to_doc_ids: bool = True) -> list[RetrievalResult]:
         filter_doc_ids = self._candidate_doc_filter(question, restrict_to_doc_ids)
         question_options = self._question_with_options(question)
-        scoring_mode = "bm25f_lite" if self.strategy == "bm25f_lite_rrf" else None
-        if self.strategy == "question_options":
-            return self.index.search(
-                query=question_options,
-                top_k=self.fused_top_k,
-                filter_doc_ids=filter_doc_ids,
-                source="question_options",
-                scoring_mode=scoring_mode,
-            )
 
         if self.strategy == "doc_first_bm25f_expansion":
             keyword_bundles = [tuple(query.split()) for query in build_rule_queries(question)]
@@ -58,51 +51,47 @@ class Retriever:
                 result.source = "doc_first_bm25f_expansion"
             return results[: self.fused_top_k]
 
-        if self.strategy == "bm25f_lite_rrf":
-            ranked_lists = [
-                self.index.search(
-                    query=query,
-                    top_k=self.top_k_per_query,
-                    filter_doc_ids=filter_doc_ids,
-                    source="bm25f_lite_rrf",
-                    scoring_mode="bm25f_lite",
+        if self.strategy == "logicrag_qwen_rrf":
+            seed_results = self.index.search(
+                query=question_options,
+                top_k=self.top_k_per_query,
+                filter_doc_ids=filter_doc_ids,
+                source="logicrag_qwen_rrf:seed",
+            )
+            ranked_lists: list[list[RetrievalResult]] = [seed_results]
+            queries = build_logicrag_rrf_queries(question, seed_results=seed_results)
+            for query in queries:
+                ranked_lists.append(
+                    self.index.search(
+                        query=query,
+                        top_k=self.top_k_per_query,
+                        filter_doc_ids=filter_doc_ids,
+                        source="logicrag_qwen_rrf",
+                    )
                 )
-                for query in build_rule_queries(question)
-            ]
             return reciprocal_rank_fusion(ranked_lists, top_k=self.fused_top_k)
 
-        ranked_lists: list[list[RetrievalResult]] = []
-        if self.strategy == "hybrid":
-            ranked_lists.append(
-                self.index.search(
-                    query=question_options,
-                    top_k=self.top_k_per_query,
-                    filter_doc_ids=filter_doc_ids,
-                    source="question_options",
-                )
-            )
-
-        queries = build_rule_queries(question)
-        if self.strategy in {"logicrag", "logicrag_agent"}:
+        if self.strategy == "logicrag_agent":
             seed_results = self.index.search(
                 query=question_options,
                 top_k=self.top_k_per_query,
                 filter_doc_ids=filter_doc_ids,
                 source="logicrag_seed",
             )
-            ranked_lists.append(seed_results)
+            ranked_lists: list[list[RetrievalResult]] = [seed_results]
             queries = build_logicrag_rrf_queries(question, seed_results=seed_results)
-
-        for query in queries:
-            ranked_lists.append(
-                self.index.search(
-                    query=query,
-                    top_k=self.top_k_per_query,
-                    filter_doc_ids=filter_doc_ids,
-                    source="bm25",
+            for query in queries:
+                ranked_lists.append(
+                    self.index.search(
+                        query=query,
+                        top_k=self.top_k_per_query,
+                        filter_doc_ids=filter_doc_ids,
+                        source="bm25",
+                    )
                 )
-            )
-        return reciprocal_rank_fusion(ranked_lists, top_k=self.fused_top_k)
+            return reciprocal_rank_fusion(ranked_lists, top_k=self.fused_top_k)
+
+        raise AssertionError(f"Unhandled runtime strategy: {self.strategy}")
 
     @staticmethod
     def _question_with_options(question: Question) -> str:

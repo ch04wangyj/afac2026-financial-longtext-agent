@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import random
 import sys
 from collections import defaultdict
@@ -26,6 +25,7 @@ from agent.io.output_layout import choose_output_dir
 from agent.llm.qwen_client import QwenClient
 from agent.reasoning.solver import Solver
 from agent.retrieve.retriever import Retriever
+from agent.runtime.mode_overrides import enable_a_board_quality_mode
 
 
 def main() -> None:
@@ -105,18 +105,6 @@ def main() -> None:
     rows.extend(solved_by_qid[question.qid] for question in todo_questions)
     write_jsonl(out_path, rows)
     print(f"wrote {len(rows)} sampled results -> {run_dir}", flush=True)
-
-
-
-def _enable_a_board_quality_mode() -> None:
-    """通过环境变量打开 A 榜 LogicRAG 检索优化模式。"""
-    os.environ["AFAC_LOGICRAG_ENABLED"] = "true"
-    os.environ["AFAC_RETRIEVAL_STRATEGY"] = "logicrag_agent"
-    os.environ["AFAC_A_BOARD_OPTION_MATRIX_ENABLED"] = "false"
-    os.environ["AFAC_ENABLE_MULTI_OPTION_JUDGEMENT"] = "false"
-    os.environ["AFAC_A_BOARD_COVERAGE_GATE_ENABLED"] = "true"
-    os.environ["AFAC_A_BOARD_FINANCIAL_CALCULATOR_ENABLED"] = "true"
-    os.environ["AFAC_A_BOARD_USE_DOC_IDS_AS_HINT_ONLY"] = "false"
 
 
 
