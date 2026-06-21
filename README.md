@@ -1,6 +1,55 @@
 # AFAC2026 赛题四金融长文本 Agent
 
-V1 稳健检索版工程骨架。默认不使用 embedding、不加载非 Qwen 压缩模型，采用规则抽取式压缩和 BM25 词法检索。
+面向 AFAC2026 赛题四的金融长文本答题仓库。当前版本已经收敛为**无 embedding 的正式默认主线**，并保留两条 **LogicRAG 实验线** 作为受支持但非默认的运行路径。
+
+## 当前版本提供什么
+
+### 正式默认主线
+- `doc_first_bm25f_expansion`
+- 特征：词法检索、文档级 shortlist、chunk 级 sparse 检索、doc-first local expansion / aggregation、无 embedding
+- 适用：当前默认提交 / smoke / sample / A100 正式运行
+
+### 保留的 LogicRAG 实验线
+- `logicrag_qwen_rrf`
+  - Retrieval-first：先验证 LogicRAG 的 query planning / query bundle 对检索证据组织是否有帮助
+- `logicrag_agent`
+  - Full-agent：在 retrieval 之上启用更完整的 LogicRAG 推理执行链
+
+### 不再作为当前维护入口的历史面
+以下内容已从当前主 README 运行面移除，不应再被视为当前正式工作流：
+- 已删除脚本：
+  - `scripts/05_compare_rag.py`
+  - `scripts/09_compare_runs.py`
+  - `scripts/11_probe_retrieval_system.py`
+  - `scripts/diagnose_answer_delta.py`
+- 已退出 active runtime surface 的历史策略：
+  - `question_options`
+  - `rule_multi_rrf`
+  - `field_boosted_rrf`
+  - `logic_lite_rrf`
+  - `linear_entity_rrf`
+  - `graph_lite_rrf`
+  - `crag_lite`
+
+---
+
+## 仓库结构速览
+
+- `agent/`：核心代码
+  - `preprocess/`：文档解析、Docling 适配、领域规则、索引字段构造
+  - `index/`：BM25 / document index
+  - `retrieve/`：默认主线、LogicRAG retrieval、claim/context/coverage 等检索组件
+  - `reasoning/`：solver、LogicRAG、option-level / claim-centric / verifier 等推理链
+  - `runtime/`：运行时配置加载、策略 contract、并发/guard、mode override
+  - `io/`：JSONL 与输出目录辅助
+- `scripts/`：用户入口脚本
+- `configs/logicrag_runtime.yaml`：LogicRAG / thinking / 并发预算配置
+- `docs/`：当前维护的辅助文档
+- `tests/`：回归测试
+- `theory/`：历史研究、路线图、参考资料和笔记（次级阅读，不是顶层运行手册）
+- `VERSION_SCORE_LOG.md`：版本得分记录
+
+---
 
 ## Quick Start
 
@@ -11,19 +60,68 @@ pip install -r requirements.txt
 copy .env.example .env
 ```
 
-配置 `DASHSCOPE_API_KEY` 后可真实调用 Qwen。未配置时可用 `--dry-run` 验证链路。真实 API Key 可以写入 `.env`、系统环境变量，或复制 `agent/local_settings.example.py` 为 `agent/local_settings.py` 后本地直写；`.env` 和 `agent/local_settings.py` 都已被 `.gitignore` 排除，不能提交到 git。
+配置 `DASHSCOPE_API_KEY` 后可真实调用 Qwen；未配置时可以用 `--dry-run` 验证链路。
 
-模型可在本地配置中切换：
+私有配置可写入：
+- `.env`
+- 系统环境变量
+- `agent/local_settings.py`（由 `agent/local_settings.example.py` 复制）
+
+这些文件都不应提交到 git。
+
+---
+
+## 模型与运行时配置
+
+默认模型：
 
 ```powershell
-# 默认
 AFAC_QWEN_MODEL=qwen3.7-plus
+```
 
-# 难题/冲榜可切换
+高预算切换：
+
+```powershell
 AFAC_QWEN_MODEL=qwen3.7-max
 ```
 
-## Pipeline
+LogicRAG / thinking / 并发预算配置集中在：
+- `configs/logicrag_runtime.yaml`
+
+当前配置里已经区分多种 thinking profile，例如：
+- `logicrag_planner`
+- `logicrag_query_bundle`
+- `logicrag_refinement`
+- `logicrag_rank_summary`
+- `logicrag_final_compose`
+- `multi_option_fallback`
+
+如果你要调整预算或开关，优先改这个 YAML，而不是把行为散落进脚本参数。
+
+---
+
+## 当前受支持的入口脚本
+
+### 主运行脚本
+- `scripts/01_prepare_docs.py`：预处理原始文档
+- `scripts/02_build_index.py`：构建索引产物
+- `scripts/03_run_questions.py`：跑默认主线或指定 runtime strategy
+- `scripts/04_make_submission.py`：从 `answer_results.jsonl` 生成提交产物
+- `scripts/06_smoke_by_domain.py`：按领域做 smoke
+- `scripts/07_run_sample.py`：按 sampleN 运行样本集
+- `scripts/08_report_results.py`：汇总 token / evidence / format 风险
+
+### 维护与辅助脚本
+- `scripts/10_cleanup_outputs.py`：安全清理历史输出
+- `scripts/11_export_docling_samples.py`：导出 Docling 样本
+- `scripts/12_analyze_docling_samples.py`：分析 Docling 样本并生成规则草案
+- `scripts/12_refresh_extra_index_fields_from_existing_index.py`：基于现有索引重写 `chunks.jsonl` 的 `extra_index_fields`
+
+---
+
+## 默认主线工作流
+
+### 1) 预处理 + 建索引 + dry-run
 
 ```powershell
 python scripts\01_prepare_docs.py
@@ -32,7 +130,7 @@ python scripts\03_run_questions.py --dry-run
 python scripts\04_make_submission.py
 ```
 
-常用烟测：
+### 2) 小规模烟测
 
 ```powershell
 python scripts\01_prepare_docs.py --limit 5
@@ -41,23 +139,23 @@ python scripts\03_run_questions.py --dry-run --limit 5
 python scripts\04_make_submission.py
 ```
 
-按五个领域各抽 1 题做 smoke：
+### 3) 按领域 smoke
 
 ```powershell
 python scripts\06_smoke_by_domain.py --dry-run --per-domain 1
 python scripts\06_smoke_by_domain.py --per-domain 1
 ```
 
-分层抽样 20 题并生成诊断报告：
+### 4) 分层样本验证
 
 ```powershell
 python scripts\07_run_sample.py --dry-run --sample-size 20 --per-domain 4 --seed 20260609
 python scripts\07_run_sample.py --sample-size 20 --per-domain 4 --seed 20260609
-python scripts\04_make_submission.py
-python scripts\08_report_results.py
+python scripts\04_make_submission.py --results outputs\samples\sample20\live\<timestamp>_<strategy>\answer_results.jsonl
+python scripts\08_report_results.py --results outputs\samples\sample20\live\<timestamp>_<strategy>\answer_results.jsonl
 ```
 
-长任务中断后可续跑：
+### 5) Resume
 
 ```powershell
 python scripts\03_run_questions.py --resume
@@ -65,85 +163,224 @@ python scripts\06_smoke_by_domain.py --per-domain 1 --resume
 python scripts\07_run_sample.py --sample-size 20 --per-domain 4 --seed 20260609 --resume
 ```
 
-横向比较不同 RAG 检索方式，先不考虑 Token：
+---
+
+## LogicRAG 实验工作流
+
+> **注意：LogicRAG 仍是保留实验线，不是默认正式主线。**
+
+### Retrieval-first：`logicrag_qwen_rrf`
+
+适合先看 LogicRAG 的 query planning / retrieval organization 是否值得继续推进，而不直接引入 full-agent 成本。
 
 ```powershell
-python scripts\05_compare_rag.py --domains financial_contracts --limit 5
+AFAC_RETRIEVAL_STRATEGY=logicrag_qwen_rrf python scripts\07_run_sample.py --dry-run --sample-size 20 --per-domain 4 --seed 20260616
 ```
 
-输出在 `outputs/rag_compare/`，使用 A 榜 `doc_ids` 作为检索命中代理指标。`recall_at_10` 和 `all_gold_at_10` 越高，后续 Qwen 推理越可能拿到正确证据；这不是最终答案准确率。
-
-比较 Graph/Logic/Linear/CRAG lite variants：
+### Full-agent：`logicrag_agent`
 
 ```powershell
-python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_options rule_multi_rrf field_boosted_rrf logic_lite_rrf linear_entity_rrf graph_lite_rrf crag_lite --output-name rag_compare_frameworks_mixed
+AFAC_LOGICRAG_ENABLED=true AFAC_RETRIEVAL_STRATEGY=logicrag_agent python scripts\06_smoke_by_domain.py --dry-run --per-domain 1
+AFAC_LOGICRAG_ENABLED=true AFAC_RETRIEVAL_STRATEGY=logicrag_agent python scripts\07_run_sample.py --sample-size 20 --per-domain 4 --seed 20260616
 ```
 
-已完成的全量横向评估、框架路线图和代码 review 见：
+### 推荐顺序
 
-```text
-theory/AFAC2026_赛题四_规则核对与偏差修正.md
-theory/AFAC2026_赛题四_RAG横向评估与代码Review.md
-theory/AFAC2026_赛题四_RAG框架扩展路线图.md
+1. 先跑默认主线 `doc_first_bm25f_expansion`
+2. 再跑 `logicrag_qwen_rrf`
+3. 只有在需要时再跑 `logicrag_agent`
+
+---
+
+## 输出目录与产物
+
+当前输出目录规则见：
+- `docs/output-layout.md`
+
+最常见的目录类型：
+- `outputs/tests/...`：`03` 的 limit/domain 子集测试输出，或其他 test-scope 运行
+- `outputs/tests/smoke/...`：`06` smoke 输出
+- `outputs/samples/sampleN/...`：`07` 样本运行输出
+- `outputs/a100/full100/live/...`：A100 正式输出
+- `outputs/docling_samples/...`：Docling 样本导出与分析输出
+
+默认会与 `answer_results.jsonl` 同目录落盘的产物：
+- `answer_results.jsonl`
+- `answer.csv`
+- `evidence.json`
+- `token_usage.json`
+- `run_report.md`
+- `run_report.json`
+
+---
+
+## Docling 与预处理辅助工具
+
+当前分支已经包含 Docling 相关辅助能力，但它们是**辅助开发/预处理工具**，不是顶层正式答题主流程。
+
+### 导出样本
+
+```powershell
+python scripts\11_export_docling_samples.py --per-domain 1
 ```
 
-## Outputs
+输出目录：
+- `outputs/docling_samples/<domain>/<doc_id>/...`
 
-- `processed_data/documents.jsonl`: 解析后的文档。
-- `processed_data/chunks.jsonl`: 分块后的证据块。
-- `processed_data/indexes/bm25_index.pkl`: 词法索引。
-- `processed_data/indexes/document_bm25_index.pkl`: B 榜盲搜用文档级词法索引。
-- `outputs/answer_results.jsonl`: 每题答案、证据和 Token。
-- `outputs/answer.csv`: 比赛提交文件。
-- `outputs/evidence.json`: 可审计证据。
-- `outputs/token_usage.json`: 汇总 Token。
-- `outputs/rag_compare/`: 不同 RAG/tokenizer 方案的检索命中横向比较。
-- `outputs/run_report.md`: 抽样运行后的 Token、证据覆盖和格式风险诊断。
+### 分析样本
 
-## Current Baseline
-
-截至 2026-06-09，已完成同一 20 题分层样本的真实 Qwen 回归：
-
-| run | total_tokens | answer_changes_vs_full | issues |
-|---|---:|---:|---|
-| full evidence 8/6000 | 158216 | 0 | 无格式/证据/verdict 问题 |
-| adaptive evidence | 145895 | 0 | 无格式/证据/verdict 问题 |
-
-自适应证据预算在样本上比 full evidence 少 `12321` tokens，且答案完全一致。完整报告在：
-
-```text
-outputs/live_sample20_adaptive/run_report.md
-outputs/compare_sample20_full_vs_adaptive/comparison.md
+```powershell
+python scripts\12_analyze_docling_samples.py
 ```
 
-已完成 A 组 100 题真实运行：
+输出目录：
+- `outputs/docling_samples/analysis_summary.json`
+- 每个样本目录下的 `analysis.md`
 
-| output | value |
-|---|---:|
-| question_rows | 100 |
-| prompt_tokens | 989706 |
-| completion_tokens | 12586 |
-| total_tokens | 1002292 |
-| detected issues | 0 |
+### 刷新 `extra_index_fields`
 
-全量产物在：
-
-```text
-outputs/a_full_adaptive/answer.csv
-outputs/a_full_adaptive/evidence.json
-outputs/a_full_adaptive/token_usage.json
-outputs/a_full_adaptive/run_report.md
+```powershell
+python scripts\12_refresh_extra_index_fields_from_existing_index.py
 ```
+
+这个脚本会根据当前索引内容重写：
+- `processed_data/chunks.jsonl`
+
+仅在你明确知道自己为什么要重写 `chunks.jsonl` 时使用。
+
+---
+
+## 版本记录与次级文档
+
+### 版本得分记录
+- `VERSION_SCORE_LOG.md`
+
+### 当前维护的辅助文档
+- `docs/output-layout.md`
+- `docs/retrieval/nonembed_retrieval_notes.md`
+
+### 历史 / 深度研究资料（次级阅读）
+- `theory/`
+- `theory/references/README.md`
+
+这些文档可以帮助理解路线与取舍，但**不应替代本 README 的当前运行口径**。
+
+---
 
 ## Development Rules
 
-- 不使用 embedding、向量数据库或非 Qwen reranker。
-- `.env`、`processed_data/`、`outputs/` 不提交。
-- 所有 Qwen 调用必须记录 usage。
-- `03/06/07` 运行脚本已支持逐题 checkpoint 和 `--resume`，全量 A 组真实调用建议始终指定独立 `AFAC_OUTPUTS_DIR`。
-- 默认模型为 `qwen3.7-plus`，可切换到 `qwen3.7-max`；使用百炼 OpenAI-compatible API 和流式输出，并尽量通过 `stream_options.include_usage` 获取真实 Token。
-- 为控制 Token，普通答题和逐选项判断默认覆盖为 `enable_thinking=false`；低置信复核时再显式打开 thinking 或切换 max。
-- 逐选项判断使用独立证据预算：默认 `AFAC_OPTION_TOP_K_EVIDENCE=6`、`AFAC_OPTION_EVIDENCE_CHARS=5000`；研报自动提升到 full 预算，避免遗漏长文档趋势证据。
-- 原版 GraphRAG/LightRAG/HippoRAG/RAPTOR/Self-RAG/OpenSPG 不进入默认链路；只允许无 embedding、无非 Qwen 模型的 lite 思想作为实验分支。
-- V1 默认 `question_options` 主检索；多选题已启用逐选项判断；B 榜无 `doc_ids` 时使用文档级 BM25 盲搜候选。
-- V2 后续再加入 Qwen 子问题 DAG、IterKey、Calculator、IRCoT-lite 和低置信 CoVe。
+### Retrieval strategy override
+
+不要改代码默认值来切换策略，优先通过环境变量覆盖：
+
+```powershell
+AFAC_RETRIEVAL_STRATEGY=doc_first_bm25f_expansion python scripts\03_run_questions.py --dry-run --limit 2
+AFAC_RETRIEVAL_STRATEGY=logicrag_qwen_rrf python scripts\03_run_questions.py --dry-run --limit 2
+AFAC_RETRIEVAL_STRATEGY=logicrag_agent python scripts\03_run_questions.py --dry-run --limit 2
+```
+
+运行时建议检查日志中的：
+- `retrieval_strategy=...`
+- `index=...`
+- `doc_index_loaded=True/False`
+
+### 其他约束
+- 不使用 embedding、向量数据库或非 Qwen reranker
+- `.env`、`processed_data/`、`outputs/` 不提交
+- 所有 Qwen 调用必须记录 usage
+- `03/06/07` 支持逐题 checkpoint 和 `--resume`
+- GitHub 提交应使用 GitHub 允许的 noreply 身份
+
+---
+
+## 合并到 main 前的最小验证集
+
+### 1) Runtime contract
+
+```powershell
+python -m pytest tests/test_runtime_strategy_contract.py -v
+```
+
+### 2) 默认主线策略
+
+```powershell
+python -m pytest tests/retrieval_system/test_default_retrieval_strategy.py -v
+```
+
+### 3) LogicRAG retrieval / solver
+
+```powershell
+python -m pytest tests/test_logicrag_retrieval.py tests/test_logicrag_solver.py -v
+```
+
+### 4) 输出目录逻辑
+
+```powershell
+python -m pytest tests/test_output_layout.py -v
+```
+
+### 5) 推荐 smoke
+
+```powershell
+python scripts\03_run_questions.py --dry-run --limit 2
+AFAC_RETRIEVAL_STRATEGY=logicrag_qwen_rrf python scripts\07_run_sample.py --dry-run --sample-size 5 --per-domain 1 --seed 20260621
+python scripts\04_make_submission.py --results <generated-answer_results.jsonl>
+```
+
+### 成功信号
+- 默认主线日志里出现：`retrieval_strategy=doc_first_bm25f_expansion`
+- 运行脚本输出：`wrote ... answer_results.jsonl`
+- 提交脚本输出：`wrote submission artifacts to ...`
+
+---
+
+## 准备推到 main 的检查清单
+
+在把当前分支合并到 `main` 之前，至少确认以下几点：
+
+- [ ] `README.md` 与当前保留主线/实验线一致
+- [ ] README 和顶层 docs 不再引用已删除脚本
+- [ ] 默认主线 / LogicRAG 的最小验证集通过
+- [ ] smoke 命令能真实跑通
+- [ ] 输出目录说明与 `docs/output-layout.md` 一致
+- [ ] 版本/分支说明足以让 reviewer 识别 **Keep / Removed / Experimental** 边界
+- [ ] 提交作者身份使用 GitHub 允许的 noreply email
+
+推荐合并方式：
+1. 从 `ARS` 开 PR 到 `main`
+2. 在 PR 描述中明确：保留主线、保留 LogicRAG、移除历史 compare/probe 面
+3. 附上最小验证命令与结果
+4. 通过 review 后 squash merge 到 `main`
+
+---
+
+## 给 reviewer 的建议 PR 摘要模板
+
+```md
+## Summary
+- Refresh README for the retained default mainline and LogicRAG experiment lines
+- Remove stale top-level references to deleted compare/probe workflows
+- Align output-layout and release-readiness instructions with the current branch
+
+## Kept
+- `doc_first_bm25f_expansion`
+- `logicrag_qwen_rrf`
+- `logicrag_agent`
+
+## Removed from active docs surface
+- deleted compare/probe scripts
+- legacy retrieval variants as active runtime entrypoints
+
+## Validation
+- runtime strategy contract tests
+- default retrieval strategy test
+- LogicRAG retrieval / solver tests
+- output layout tests
+- dry-run smoke + submission artifact generation
+```
+
+---
+
+## Historical Note
+
+当前仓库仍保留一定数量的历史研究文档、理论路线图和内部参考资料；这些内容用于复盘与研究，不代表当前默认运行面。若 README 与 `theory/` 某些历史文档描述冲突，以 README 当前版本和受支持脚本为准。

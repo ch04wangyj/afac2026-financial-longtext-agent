@@ -23,6 +23,17 @@ FALSE_WORDS = {"false", "no", "错误", "错", "不成立", "不支持", "否"}
 
 def parse_answer(text: str, answer_format: AnswerFormat) -> str:
     """根据题型抽取答案；多选会去重并按字母排序。"""
+    if answer_format == "multi":
+        obj = extract_json_object(text or "") or {}
+        if any(key in obj for key in ("answer", "答案", "final_answer")):
+            explicit_value = obj.get("answer")
+            if explicit_value is None:
+                explicit_value = obj.get("答案")
+            if explicit_value is None:
+                explicit_value = obj.get("final_answer")
+            explicit_text = "" if explicit_value is None else str(explicit_value)
+            letters = sorted(set(letter for letter in _letters(explicit_text) if letter in VALID))
+            return "".join(letters)
     candidates = _extract_candidates(text)
     if answer_format == "multi":
         letters = sorted(set(letter for letter in candidates if letter in VALID))

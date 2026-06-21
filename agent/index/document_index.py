@@ -32,7 +32,14 @@ class DocumentSearchIndex:
             title = str(first.metadata.get("title", ""))
             parts = [title]
             for item in items:
-                fields = [item.section, item.clause_id, item.text, " ".join(item.tables)]
+                extra_index_fields = item.metadata.get("extra_index_fields", [])
+                fields = [
+                    item.section,
+                    item.clause_id,
+                    item.text,
+                    " ".join(item.tables),
+                    " ".join(str(x) for x in extra_index_fields if str(x).strip()),
+                ]
                 text = "\n".join(field for field in fields if field)
                 if text:
                     parts.append(text)

@@ -66,13 +66,13 @@ python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_opt
 | Rank | Variant | hit@1 | hit@5 | hit@10 | recall@10 | all_gold@10 | mrr@10 | 结论 |
 |---:|---|---:|---:|---:|---:|---:|---:|---|
 | 1 | oracle_doc_restricted | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | A 榜上界，不代表 B 榜 |
-| 2 | question_options | 0.780 | 0.970 | 1.000 | 0.915 | 0.810 | 0.858 | 当前非 oracle 最稳，适合默认 V1 |
+| 2 | question_options | 0.780 | 0.970 | 1.000 | 0.915 | 0.810 | 0.858 | 历史 sparse baseline，已不再作为正式默认 |
 | 3 | rule_multi_rrf | 0.690 | 0.920 | 0.980 | 0.908 | 0.820 | 0.788 | 召回接近，但 top-rank 弱 |
 | 4 | field_boosted_rrf | 0.690 | 0.940 | 0.980 | 0.883 | 0.770 | 0.785 | 当前 boost 规则不够稳 |
 | 5 | option_rrf | 0.670 | 0.920 | 0.980 | 0.879 | 0.760 | 0.773 | 可作为多选补充检索 |
 | 6 | question_only | 0.570 | 0.860 | 0.950 | 0.822 | 0.680 | 0.696 | 明显弱于带选项检索 |
 
-**结论**：如果只选一个默认检索策略，当前应使用 `question_options`。它的 hit@1、hit@5、MRR 都最高，说明最容易把正确文档排到前面，后续 Qwen 更容易使用正确证据。
+**结论**：当前若只选一个**正式默认检索策略**，应使用 `doc_first_bm25f_expansion`。`question_options` 仍可保留为历史 sparse baseline，但不再代表正式线上默认链路。默认主线现在应以 **BM25F-lite + doc-first local expansion/aggregation + offline expansion-field-enhanced index** 为准。
 
 ### 2.2 Tokenizer 技术栈比较
 
@@ -88,9 +88,9 @@ python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_opt
 
 **结论**：
 
-- 默认路径优先：`mixed + question_options`。
+- 正式默认路径优先：`doc_first_bm25f_expansion`。
 - 追求最大 recall@10 时可并行补充：`word + field_boosted_rrf`。
-- `char` 与 `mixed` 在 `question_options` 下几乎一致，说明 char n-gram 是稳健底座。
+- `question_options` / `char + question_options` 仍有历史参考价值，但现在应视为 legacy sparse baseline，而不是默认排序。
 - `word` 对 recall 有优势，但 hit@1 和 MRR 稍弱，适合作为 RRF 辅助，不建议单独作为默认排序。
 
 ### 2.3 按领域观察
@@ -111,7 +111,7 @@ python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_opt
 
 | Rank | Variant | hit@1 | hit@5 | hit@10 | recall@10 | all_gold@10 | mrr@10 | 结论 |
 |---:|---|---:|---:|---:|---:|---:|---:|---|
-| 1 | question_options | 0.780 | 0.970 | 1.000 | 0.915 | 0.810 | 0.858 | 默认主路仍最稳 |
+| 1 | question_options | 0.780 | 0.970 | 1.000 | 0.915 | 0.810 | 0.858 | 历史 sparse baseline，默认口径已切换 |
 | 2 | rule_multi_rrf | 0.690 | 0.920 | 0.980 | 0.908 | 0.820 | 0.788 | 补召回可用 |
 | 3 | crag_lite | 0.800 | 0.950 | 0.990 | 0.905 | 0.810 | 0.867 | Hit@1/MRR 最好，适合低置信纠错 |
 | 4 | logic_lite_rrf | 0.650 | 0.930 | 0.980 | 0.887 | 0.780 | 0.758 | 财报 recall@10 达 0.950，适合逐选项/财报补召回 |
@@ -121,7 +121,7 @@ python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_opt
 
 框架层面的收敛判断：
 
-- `question_options` 不替换，继续作为 V1 默认，因为 recall@10 和 hit@5 都最稳。
+- `question_options` 不再作为正式默认主路，转为保留的历史 sparse baseline。
 - `crag_lite` 保留为低置信纠错路径；它提高 hit@1 和 MRR，但不能单独替代主路。
 - `logic_lite_rrf` 对财报更有价值，应接入逐选项判断和 Calculator 前置检索。
 - `graph_lite_rrf`、`linear_entity_rrf` 当前规则太轻，不适合全题默认；等 V3 文档级索引/实体图成熟后再升级。
@@ -132,11 +132,12 @@ python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_opt
 
 ### V1 默认
 
-1. 检索主路：`mixed + question_options`
-2. 召回补充：`mixed + rule_multi_rrf`
-3. 对合同/财报补充：`word + field_boosted_rrf`
-4. 融合方式：RRF 合并多路结果，优先保留来自多个策略共同命中的 chunk/doc
-5. 压缩方式：规则抽取式压缩，确保正确文档中的数值、日期、条款号、表格行不会被丢弃
+1. 正式默认检索主路：`doc_first_bm25f_expansion`
+2. legacy sparse 对照：`question_options`
+3. 召回补充 / 实验对照：`mixed + rule_multi_rrf`
+4. 对合同/财报补充：`word + field_boosted_rrf`
+5. 融合方式：RRF 合并多路结果，优先保留来自多个策略共同命中的 chunk/doc
+6. 压缩方式：规则抽取式压缩，确保正确文档中的数值、日期、条款号、表格行不会被丢弃
 
 ### V2 优先改进
 
@@ -157,4 +158,4 @@ python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_opt
 | oracle_doc_restricted | 上界 1.0 | A 榜可用，B 榜不可依赖 |
 | 表格/KVP 索引 | 目前未完全实现 | 对财报、合同计算题预计收益最大 |
 
-最终建议：**先把默认检索改为以 `question_options` 为主，再引入多路 RRF 作为补充，而不是盲目增加更复杂 Agent 流程。** 在不考虑 Token 的前提下，正确证据覆盖率比少量 Prompt 成本更重要。
+最终建议：**当前正式默认检索应保持 `doc_first_bm25f_expansion`，并把 `question_options` 降级为可保留的历史 sparse baseline / 对照项。** 在不考虑 Token 的前提下，正式默认主线应优先保证长金融文档中的正确文档与正确证据块能稳定上浮，而不是继续沿用仅以 `question_options` 为中心的旧默认叙述。

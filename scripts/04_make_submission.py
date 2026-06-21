@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 from agent.config import Settings
 from agent.io.jsonl import read_jsonl, write_json
+from agent.io.output_layout import infer_artifact_dir_from_results
 from agent.io.submission import summarize_usage, write_answer_csv
 from agent.schemas import AnswerResult
 
@@ -24,18 +25,19 @@ def main() -> None:
     settings = Settings.from_env()
     settings.ensure_dirs()
     results_path = args.results or settings.outputs_dir / "answer_results.jsonl"
+    artifact_dir = infer_artifact_dir_from_results(results_path)
     results = [AnswerResult.from_dict(row) for row in read_jsonl(results_path)]
     if not results:
         raise RuntimeError(f"No results found: {results_path}")
 
-    write_answer_csv(settings.outputs_dir / "answer.csv", results)
+    write_answer_csv(artifact_dir / "answer.csv", results)
     write_json(
-        settings.outputs_dir / "evidence.json",
+        artifact_dir / "evidence.json",
         {result.qid: evidence_items_with_qid(result) for result in results},
     )
     usage = summarize_usage(results)
-    write_json(settings.outputs_dir / "token_usage.json", usage.to_dict())
-    print(f"wrote submission artifacts to {settings.outputs_dir}")
+    write_json(artifact_dir / "token_usage.json", usage.to_dict())
+    print(f"wrote submission artifacts to {artifact_dir}")
 
 
 def evidence_items_with_qid(result: AnswerResult) -> list[dict]:

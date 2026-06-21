@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,7 +19,8 @@ from agent.config import Settings
 from agent.data.questions import load_questions
 from agent.index.bm25 import BM25SearchIndex
 from agent.index.document_index import DocumentSearchIndex
-from agent.io.jsonl import append_jsonl, read_jsonl, write_jsonl
+from agent.io.jsonl import read_jsonl, write_jsonl
+from agent.io.output_layout import choose_output_dir
 from agent.llm.qwen_client import QwenClient
 from agent.reasoning.solver import Solver
 from agent.retrieve.retriever import Retriever
@@ -40,6 +42,14 @@ def main() -> None:
     settings = Settings.from_env()
     settings.ensure_dirs()
     questions = _select_questions(load_questions(settings.questions_root, domains=args.domains), args.per_domain)
+    run_dir = choose_output_dir(
+        settings,
+        run_scope="test",
+        run_name="smoke",
+        strategy=settings.retrieval_strategy,
+        dry_run=args.dry_run,
+        resume=args.resume,
+    )
 
     index_path = args.index or settings.index_dir / "bm25_index.pkl"
     index = BM25SearchIndex.load(index_path)
@@ -50,28 +60,37 @@ def main() -> None:
         doc_index=doc_index,
         top_k_per_query=settings.top_k_retrieval,
         fused_top_k=settings.top_k_retrieval,
+        strategy=settings.retrieval_strategy,
         blind_top_docs=settings.blind_top_docs,
     )
     compressor = RuleEvidenceCompressor(max_chars=settings.max_evidence_chars, top_k=settings.top_k_evidence)
     solver = Solver(retriever, compressor, QwenClient(settings, dry_run=args.dry_run))
 
-    out_path = settings.outputs_dir / "answer_results.jsonl"
+    out_path = run_dir / "answer_results.jsonl"
     existing_by_qid = _load_existing_results(out_path) if args.resume else {}
     if not args.resume and out_path.exists():
         out_path.unlink()
 
     results = []
-    for idx, question in enumerate(questions, start=1):
-        if question.qid in existing_by_qid:
-            print(f"[{idx}/{len(questions)}] skip {question.domain}/{question.qid} from checkpoint", flush=True)
-            results.append(existing_by_qid[question.qid])
-            continue
+    todo_questions = [question for question in questions if question.qid not in existing_by_qid]
+    if existing_by_qid:
+        for idx, question in enumerate(questions, start=1):
+            if question.qid in existing_by_qid:
+                print(f"[{idx}/{len(questions)}] skip {question.domain}/{question.qid} from checkpoint", flush=True)
+                results.append(existing_by_qid[question.qid])
 
-        print(f"[{idx}/{len(questions)}] solving {question.domain}/{question.qid}", flush=True)
-        row = solver.solve(question).to_dict()
-        results.append(row)
-        append_jsonl(out_path, row)
+    def solve_question(question):
+        print(f"solving {question.domain}/{question.qid}", flush=True)
+        return question.qid, solver.solve(question).to_dict()
 
+    with ThreadPoolExecutor(max_workers=settings.question_workers) as executor:
+        futures = {executor.submit(solve_question, question): question.qid for question in todo_questions}
+        pending = []
+        for future in as_completed(futures):
+            pending.append(future.result())
+
+    solved_by_qid = {qid: row for qid, row in pending}
+    results.extend(solved_by_qid[question.qid] for question in todo_questions)
     write_jsonl(out_path, results)
     print(f"wrote {len(results)} smoke results -> {out_path}", flush=True)
 
