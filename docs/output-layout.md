@@ -2,14 +2,15 @@
 
 本项目默认将运行产物写入 `outputs/`。
 
-当前文档只描述仍在维护的运行面：
+当前文档只描述**仍在维护的输出面**：
 - 默认主线运行
 - LogicRAG 保留实验线运行
 - sample / smoke / A100 正式输出
+- Docling 样本导出与分析输出
 
 ## 目标
 
-- 明确区分：测试输出、样本输出、A 榜 100 题正式输出
+- 明确区分：测试输出、样本输出、A 榜 100 题正式输出、Docling 样本输出
 - 让 `answer.csv / evidence.json / token_usage.json / run_report.*` 自动跟随对应运行目录
 - 让 loose artifacts 可以通过安全脚本清理
 
@@ -18,33 +19,37 @@
 ```text
 outputs/
   tests/
+    <run_name>/
+      dry/<timestamp>_<strategy>/
+      live/<timestamp>_<strategy>/
     smoke/
       dry/<timestamp>_<strategy>/
       live/<timestamp>_<strategy>/
   samples/
-    sample20/
-      dry/<timestamp>_<strategy>/
-      live/<timestamp>_<strategy>/
-    sample40/
+    sampleN/
       dry/<timestamp>_<strategy>/
       live/<timestamp>_<strategy>/
   a100/
     full100/
       live/<timestamp>_<strategy>/
+  docling_samples/
+    <domain>/<doc_id>/...
+    analysis_summary.json
 ```
 
 ## 各脚本默认行为
 
 ### `scripts/03_run_questions.py`
 - 全量 100 题真实运行：`outputs/a100/full100/live/...`
-- 其他 limit / domain 子集：`outputs/tests/...`
+- 其他 limit / domain 子集：`outputs/tests/<run_name>/{dry|live}/...`
+  - 例如：`run_questions_limit2`
 
 ### `scripts/06_smoke_by_domain.py`
 - dry-run：`outputs/tests/smoke/dry/...`
 - live：`outputs/tests/smoke/live/...`
 
 ### `scripts/07_run_sample.py`
-- sample20 / sample40：`outputs/samples/<sampleN>/{dry|live}/...`
+- sample20 / sample40 / sampleN：`outputs/samples/sampleN/{dry|live}/...`
 - 若实际题数为 100：归类为 `outputs/a100/full100/live/...`
 
 ### `scripts/04_make_submission.py`
@@ -52,6 +57,13 @@ outputs/
 
 ### `scripts/08_report_results.py`
 - 默认把 `run_report.md / run_report.json` 写回 `--results` 所在目录
+
+### `scripts/11_export_docling_samples.py`
+- 输出到：`outputs/docling_samples/<domain>/<doc_id>/...`
+
+### `scripts/12_analyze_docling_samples.py`
+- 汇总输出：`outputs/docling_samples/analysis_summary.json`
+- 单样本输出：`outputs/docling_samples/<domain>/<doc_id>/analysis.md`
 
 ## 显式覆盖规则
 
