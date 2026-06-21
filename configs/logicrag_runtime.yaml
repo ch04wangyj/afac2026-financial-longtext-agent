@@ -57,6 +57,10 @@ thinking_profiles:
     level: low
     enabled: true
     max_tokens: 320
+  claim_set_verification:
+    level: medium
+    enabled: true
+    max_tokens: 768
 
 logicrag:
   enabled: true
@@ -100,3 +104,8 @@ a_board:
   claim_final_compose_enabled: false
   claim_verdict_max_evidence_items: 6
   claim_retry_verdict_max_evidence_items: 8
+  evidence_set_selection_enabled: true
+  claim_set_verification_enabled: true
+  numeric_fact_ledger_enabled: true
+  claim_require_valid_citations: true
+  claim_set_verification_max_evidence_items: 10

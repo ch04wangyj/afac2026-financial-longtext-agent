@@ -48,6 +48,29 @@ def test_build_claim_query_bundles_deduplicates_queries():
     assert any(bundle.intent == "clause_consequence" for bundle in bundles)
 
 
+def test_financial_metric_alias_query_expands_report_disclosure_names():
+    from agent.retrieve.claim_retrieval import build_claim_query_bundles
+
+    question = Question(
+        qid="q_alias",
+        domain="financial_reports",
+        split="A",
+        question="比较两家公司2025年经营成果。",
+        options={"A": "甲公司归母净利润增速高于乙公司"},
+        answer_format="mcq",
+        doc_ids=["doc_a", "doc_b"],
+    )
+
+    claim = build_claim_targets(question)[0]
+    bundles = build_claim_query_bundles(question, claim, max_bundles=6)
+    alias_queries = [bundle.query for bundle in bundles if bundle.intent == "metric_alias"]
+
+    assert len(alias_queries) == 1
+    assert "归属于上市公司股东的净利润" in alias_queries[0]
+    assert "本年比上年增减" in alias_queries[0]
+    assert "净利润" in claim.must_terms[0]
+
+
 
 def test_retrieve_claim_candidates_uses_intent_sources_and_doc_filter():
     from agent.retrieve.claim_retrieval import retrieve_claim_candidates
@@ -96,3 +119,51 @@ def test_retrieve_claim_candidates_uses_intent_sources_and_doc_filter():
     assert bundles
     assert all(call[2] == {"doc1"} for call in index.calls)
     assert any(call[3].startswith("claim_A_") for call in index.calls)
+
+
+def test_comparison_claim_searches_each_document_independently():
+    from agent.retrieve.claim_retrieval import retrieve_claim_candidates
+
+    question = Question(
+        qid="q4",
+        domain="financial_reports",
+        split="A",
+        question="比较两家公司2025年净利润增速。",
+        options={"A": "甲公司净利润增速高于乙公司"},
+        answer_format="mcq",
+        doc_ids=["doc_a", "doc_b"],
+    )
+    claim = build_claim_targets(question)[0]
+
+    class FakeIndex:
+        def __init__(self):
+            self.filters = []
+
+        def search(self, query, top_k, filter_doc_ids=None, source="test"):
+            self.filters.append(filter_doc_ids)
+            doc_id = sorted(filter_doc_ids or {"doc_a"})[0]
+            return [
+                RetrievalResult(
+                    chunk_id=f"{doc_id}:{source}",
+                    doc_id=doc_id,
+                    domain="financial_reports",
+                    score=1.0,
+                    source=source,
+                    query=query,
+                    evidence_text=query,
+                    metadata={},
+                )
+            ]
+
+    index = FakeIndex()
+    retrieve_claim_candidates(
+        index,
+        question,
+        claim,
+        filter_doc_ids={"doc_a", "doc_b"},
+        top_k_per_query=3,
+        fused_top_k=8,
+    )
+
+    assert {"doc_a"} in index.filters
+    assert {"doc_b"} in index.filters

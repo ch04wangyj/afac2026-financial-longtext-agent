@@ -435,7 +435,7 @@ class LogicRAGSolverTest(unittest.TestCase):
         self.assertEqual(result.answer, "AC")
         self.assertEqual(result.metadata["strategy"], "claim_centric_multi")
         self.assertEqual(set(result.metadata["claim_runs"].keys()), {"A", "B", "C"})
-        self.assertEqual(result.metadata["answer_assembly_policy"], "multi_all_supported")
+        self.assertEqual(result.metadata["answer_assembly_policy"], "set_verified_exact_match")
         self.assertIn("token_budget_policy", result.metadata)
         self.assertFalse(result.metadata["token_budget_policy"]["claim_final_compose_enabled"])
 
@@ -461,7 +461,7 @@ class LogicRAGSolverTest(unittest.TestCase):
 
         self.assertEqual(result.answer, "B")
         self.assertEqual(result.metadata["strategy"], "claim_centric_mcq")
-        self.assertEqual(result.metadata["answer_assembly_policy"], "single_strongest_supported")
+        self.assertEqual(result.metadata["answer_assembly_policy"], "set_verified_exact_match")
         self.assertEqual(set(result.metadata["claim_runs"].keys()), {"A", "B"})
 
     def test_claim_centric_route_records_required_claim_run_metadata(self):

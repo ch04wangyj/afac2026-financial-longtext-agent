@@ -106,7 +106,7 @@ class LogicPlanSchemaTest(unittest.TestCase):
     def test_settings_from_env_reads_logicrag_fields(self):
         env = {
             "AFAC_LOGICRAG_ENABLED": "true",
-            "AFAC_RETRIEVAL_STRATEGY": "logicrag",
+            "AFAC_RETRIEVAL_STRATEGY": "logicrag_agent",
             "AFAC_LOGICRAG_MAX_SUBPROBLEMS": "7",
             "AFAC_LOGICRAG_MAX_RANKS": "5",
             "AFAC_LOGICRAG_RANK_TOP_K": "9",
@@ -118,7 +118,7 @@ class LogicPlanSchemaTest(unittest.TestCase):
             settings = Settings.from_env()
 
         self.assertTrue(settings.logicrag_enabled)
-        self.assertEqual(settings.retrieval_strategy, "logicrag")
+        self.assertEqual(settings.retrieval_strategy, "logicrag_agent")
         self.assertEqual(settings.logicrag_max_subproblems, 7)
         self.assertEqual(settings.logicrag_max_ranks, 5)
         self.assertEqual(settings.logicrag_rank_top_k, 9)

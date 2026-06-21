@@ -95,6 +95,7 @@ LogicRAG / thinking / 并发预算配置集中在：
 - `logicrag_rank_summary`
 - `logicrag_final_compose`
 - `multi_option_fallback`
+- `claim_set_verification`
 
 如果你要调整预算或开关，优先改这个 YAML，而不是把行为散落进脚本参数。
 
@@ -162,6 +163,25 @@ python scripts\03_run_questions.py --resume
 python scripts\06_smoke_by_domain.py --per-domain 1 --resume
 python scripts\07_run_sample.py --sample-size 20 --per-domain 4 --seed 20260609 --resume
 ```
+
+---
+
+## A 榜质量模式（V10 candidate）
+
+`--a-board-quality` 在 V9 claim-centric 路径上增加三层确定性约束：
+
+- **证据集合选择**：在字符预算内按文档、实体、数值、日期、条款后果和表格结构覆盖选择证据，抑制近重复 chunk。
+- **指标规范化检索**：选项实体优先，使用财报披露名词典和 weighted RRF 对跨公司比较端点做逐文档召回。
+- **claim 校准与集合级复核**：验证证据编号；对多选、证据不足、全称/复合/数值断言执行一次 exact-match 集合复核。
+- **数值事实账本**：确定性抽取指标、年份、原值、单位和规范化值，供最终复核核对；不执行模型生成代码。
+
+```powershell
+python scripts\07_run_sample.py --dry-run --a-board-quality --sample-size 20 --per-domain 4 --seed 20260621
+python scripts\07_run_sample.py --a-board-quality --sample-size 20 --per-domain 4 --seed 20260621
+python scripts\03_run_questions.py --a-board-quality
+```
+
+该模式仍严格限制在题目给定的 `doc_ids` 内。新增组件只在质量模式启用，默认 `doc_first_bm25f_expansion` 主线行为不变。实验依据和边界见 `theory/references/notes/2026-06-21_v10-set-verification-and-fact-ledger.md`。
 
 ---
 

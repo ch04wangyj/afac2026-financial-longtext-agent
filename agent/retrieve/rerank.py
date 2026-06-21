@@ -1,4 +1,4 @@
-"""Lexical and structural reranking for sparse retrieval candidates."""
+"""稀疏检索候选的词法与结构化重排。"""
 
 from __future__ import annotations
 
@@ -52,6 +52,8 @@ def rerank_retrieval_results(
         evidence_density_bonus = 0.0
         if any(char.isdigit() for char in text) and (metric_block_bonus or clause_consequence_bonus or target.evidence_intent in {"comparison", "number"}):
             evidence_density_bonus += 0.12
+        metric_alias_hits = list(result.metadata.get("claim_metric_alias_hits", []))
+        metric_alias_bonus = min(0.66, len(metric_alias_hits) * 0.22)
 
         doc_bonus = 0.10 if target.doc_scope and result.doc_id in set(target.doc_scope) else 0.0
         duplicate_penalty = 0.08 if seen_texts.get(text.strip(), 0) else 0.0
@@ -66,6 +68,7 @@ def rerank_retrieval_results(
             + metric_block_bonus
             + clause_consequence_bonus
             + evidence_density_bonus
+            + metric_alias_bonus
             + doc_bonus
             - generic_page_penalty
             - duplicate_penalty
@@ -81,6 +84,8 @@ def rerank_retrieval_results(
             "metric_block_bonus": round(metric_block_bonus, 6),
             "clause_consequence_bonus": round(clause_consequence_bonus, 6),
             "evidence_density_bonus": round(evidence_density_bonus, 6),
+            "metric_alias_hits": metric_alias_hits,
+            "metric_alias_bonus": round(metric_alias_bonus, 6),
             "generic_page_penalty": round(generic_page_penalty, 6),
             "doc_bonus": round(doc_bonus, 6),
             "duplicate_penalty": round(duplicate_penalty, 6),

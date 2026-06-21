@@ -1,5 +1,5 @@
 from agent.retrieve.rerank import rerank_retrieval_results
-from agent.retrieve.targets import build_retrieval_target
+from agent.retrieve.targets import RetrievalTarget, build_retrieval_target
 from agent.schemas import Question, RetrievalResult
 
 
@@ -49,6 +49,27 @@ def test_rerank_retrieval_results_prefers_must_term_and_structure_matches():
     assert ranked[0].chunk_id == "c1"
     assert ranked[0].metadata["rerank_score"] >= ranked[1].metadata["rerank_score"]
     assert ranked[0].metadata["rerank_features"]["must_hits"] >= 1
+
+
+def test_rerank_rewards_exact_financial_metric_alias_hits():
+    question = Question(
+        qid="q_alias",
+        domain="financial_reports",
+        split="A",
+        question="比较两家公司净利润增速",
+        options={"A": "甲公司增速更高"},
+        answer_format="mcq",
+        doc_ids=["doc"],
+    )
+    target = RetrievalTarget(node_id="q_alias:A", rank=0, question=question.question, doc_scope=["doc"])
+    weak = _result("weak", "2025年公司经营情况。", 1.0)
+    strong = _result("strong", "归属于上市公司股东的净利润本年比上年减少18.97%。", 1.0)
+    strong.metadata["claim_metric_alias_hits"] = ["归属于上市公司股东的净利润", "本年比上年增减"]
+
+    ranked = rerank_retrieval_results(question, target, [weak, strong])
+
+    assert ranked[0].chunk_id == "strong"
+    assert ranked[0].metadata["rerank_features"]["metric_alias_bonus"] == 0.44
 
 
 

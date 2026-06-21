@@ -1,4 +1,4 @@
-"""Claim-level retrieval targets shared by single-choice and multi-select QA."""
+"""单选与多选共用的 Claim 级检索目标。"""
 
 from __future__ import annotations
 
@@ -60,11 +60,15 @@ def build_claim_targets(question: Question) -> list[ClaimTarget]:
     for option_key, option_text in sorted(question.options.items()):
         claim_text = f"{question.question}\n判断选项{option_key}是否正确：{option_text}".strip()
         combined = f"{question.question} {option_text}".strip()
-        entities = _dedupe([*extract_query_entities(question.question), *extract_query_entities(option_text)])[:12]
+        option_entities = extract_query_entities(option_text)
+        question_entities = extract_query_entities(question.question)
+        # Claim 检索首先服务于当前选项。题干模板词放在前面会截断真正的指标、
+        # 主体和比较端点，因此实体与 must_terms 都按 option-first 组织。
+        entities = _dedupe([*option_entities, *question_entities])[:12]
         numbers = _dedupe(extract_numbers(combined))[:6]
         dates = _dedupe(extract_dates(combined))[:6]
         claim_type = infer_claim_type(combined, numbers=numbers, dates=dates)
-        must_terms = _dedupe([*entities[:8], *numbers[:4], *dates[:4]])[:10]
+        must_terms = _dedupe([*option_entities[:6], *numbers[:4], *dates[:4], *question_entities[:3]])[:10]
         should_terms = _dedupe([option_text, *extract_query_entities(option_text)[:6]])[:8]
         claims.append(
             ClaimTarget(

@@ -42,7 +42,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.a_board_quality:
-        _enable_a_board_quality_mode()
+        enable_a_board_quality_mode()
 
     settings = Settings.from_env()
     settings.ensure_dirs()

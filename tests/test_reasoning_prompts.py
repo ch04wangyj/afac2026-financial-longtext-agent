@@ -1,5 +1,6 @@
 from agent.reasoning.prompts import (
     build_answer_messages,
+    build_claim_set_verification_messages,
     build_logicrag_final_compose_messages,
     build_logicrag_plan_messages,
     build_logicrag_query_bundle_messages,
@@ -99,3 +100,35 @@ def test_logicrag_sufficiency_prompt_returns_zero_one_and_next_goal():
     assert '"sufficient": 0或1' in text
     assert "failure_tags" in text
     assert "next_search_goal" in text
+
+
+def test_claim_set_verification_prompt_requires_exact_match_and_numeric_ledger():
+    text = build_claim_set_verification_messages(
+        _question(),
+        {
+            "A": {
+                "relation": "support",
+                "confidence": 0.8,
+                "support_evidence": ["[1]"],
+                "refute_evidence": [],
+                "support_chunk_ids": ["annual:1"],
+            },
+            "B": {
+                "relation": "refute",
+                "confidence": 0.8,
+                "support_evidence": [],
+                "refute_evidence": ["[1]"],
+                "refute_chunk_ids": ["annual:1"],
+            },
+        },
+        {"A": {"sufficiency": {"sufficient": True}}},
+        _evidence(),
+        {"facts": []},
+    )[-1]["content"]
+
+    assert "集合级复核" in text
+    assert "multi 必须输出所有且仅有正确选项" in text
+    assert "数值事实账本" in text
+    assert "missing_slots" in text
+    assert '"support_evidence": ["[1]"]' in text
+    assert "answer 不得为空" in text

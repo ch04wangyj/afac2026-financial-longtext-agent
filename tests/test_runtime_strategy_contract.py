@@ -66,8 +66,16 @@ def test_enable_a_board_quality_mode_sets_logicrag_runtime_env(monkeypatch: pyte
         "AFAC_A_BOARD_COVERAGE_GATE_ENABLED",
         "AFAC_A_BOARD_FINANCIAL_CALCULATOR_ENABLED",
         "AFAC_A_BOARD_USE_DOC_IDS_AS_HINT_ONLY",
+        "AFAC_A_BOARD_MULTI_LOGICRAG_ENABLED",
+        "AFAC_A_BOARD_CLAIM_CENTRIC_MULTI_ENABLED",
+        "AFAC_A_BOARD_CLAIM_CENTRIC_MCQ_ENABLED",
+        "AFAC_A_BOARD_EVIDENCE_SET_SELECTION_ENABLED",
+        "AFAC_A_BOARD_CLAIM_SET_VERIFICATION_ENABLED",
+        "AFAC_A_BOARD_NUMERIC_FACT_LEDGER_ENABLED",
+        "AFAC_A_BOARD_CLAIM_REQUIRE_VALID_CITATIONS",
     ]:
-        monkeypatch.delenv(key, raising=False)
+        # 先登记一个占位值，确保被测函数直接写 os.environ 后 pytest 能在 teardown 恢复。
+        monkeypatch.setenv(key, "")
 
     enable_a_board_quality_mode()
 
@@ -78,3 +86,10 @@ def test_enable_a_board_quality_mode_sets_logicrag_runtime_env(monkeypatch: pyte
     assert os.environ["AFAC_A_BOARD_COVERAGE_GATE_ENABLED"] == "true"
     assert os.environ["AFAC_A_BOARD_FINANCIAL_CALCULATOR_ENABLED"] == "true"
     assert os.environ["AFAC_A_BOARD_USE_DOC_IDS_AS_HINT_ONLY"] == "false"
+    assert os.environ["AFAC_A_BOARD_MULTI_LOGICRAG_ENABLED"] == "false"
+    assert os.environ["AFAC_A_BOARD_CLAIM_CENTRIC_MULTI_ENABLED"] == "true"
+    assert os.environ["AFAC_A_BOARD_CLAIM_CENTRIC_MCQ_ENABLED"] == "true"
+    assert os.environ["AFAC_A_BOARD_EVIDENCE_SET_SELECTION_ENABLED"] == "true"
+    assert os.environ["AFAC_A_BOARD_CLAIM_SET_VERIFICATION_ENABLED"] == "true"
+    assert os.environ["AFAC_A_BOARD_NUMERIC_FACT_LEDGER_ENABLED"] == "true"
+    assert os.environ["AFAC_A_BOARD_CLAIM_REQUIRE_VALID_CITATIONS"] == "true"

@@ -102,6 +102,18 @@
 
 ---
 
+## V10 candidate｜2026-06-21 集合级证据复核与数值事实账本
+- **得分**：待官网提交验证，不使用本地样本结果代替榜单分数。
+- **相对 V9 新引入的关键改动**：
+  - 在 claim-centric 路径加入文档/实体/数值/日期/后果槽位感知的证据集合选择，减少相似 chunk 挤占上下文，并为 RRF 增加文档级代表 chunk 救援。
+  - 修正 claim target 为 option-first，并加入财报指标披露名词典、逐文档查询和 weighted RRF，解决“归母净利润/归属于上市公司股东的净利润”等术语差异导致的比较端点漏召回。
+  - 对局部 `support / refute / insufficient` verdict 校验证据编号、关键槽位和全称断言跨文档覆盖；多选和高风险单选增加一次集合级 exact-match 复核。
+  - 增加确定性数值事实账本，抽取指标、年份、单位和规范化值，避免最终复核仅依赖模型心算。
+  - 修复 `03_run_questions.py`、`07_run_sample.py` 中 A 榜质量模式函数名错误，并补充端到端与回归测试。
+- **启用方式**：`python scripts\03_run_questions.py --a-board-quality`。
+
+---
+
 ## 后续追加模板
 
 ```markdown

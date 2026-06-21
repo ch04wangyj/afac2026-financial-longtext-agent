@@ -75,6 +75,11 @@ class ABoardRuntimeConfig:
     claim_final_compose_enabled: bool = False
     claim_verdict_max_evidence_items: int = 6
     claim_retry_verdict_max_evidence_items: int = 8
+    evidence_set_selection_enabled: bool = False
+    claim_set_verification_enabled: bool = False
+    numeric_fact_ledger_enabled: bool = False
+    claim_require_valid_citations: bool = True
+    claim_set_verification_max_evidence_items: int = 10
 
 
 @dataclass(frozen=True)
@@ -243,6 +248,32 @@ def load_logicrag_runtime_config(path: Path | None = None) -> LogicRAGRuntimeCon
                 "claim_retry_verdict_max_evidence_items", ABoardRuntimeConfig.claim_retry_verdict_max_evidence_items
             )
         ),
+        evidence_set_selection_enabled=_as_bool(
+            (raw.get("a_board") or {}).get(
+                "evidence_set_selection_enabled", ABoardRuntimeConfig.evidence_set_selection_enabled
+            )
+        ),
+        claim_set_verification_enabled=_as_bool(
+            (raw.get("a_board") or {}).get(
+                "claim_set_verification_enabled", ABoardRuntimeConfig.claim_set_verification_enabled
+            )
+        ),
+        numeric_fact_ledger_enabled=_as_bool(
+            (raw.get("a_board") or {}).get(
+                "numeric_fact_ledger_enabled", ABoardRuntimeConfig.numeric_fact_ledger_enabled
+            )
+        ),
+        claim_require_valid_citations=_as_bool(
+            (raw.get("a_board") or {}).get(
+                "claim_require_valid_citations", ABoardRuntimeConfig.claim_require_valid_citations
+            )
+        ),
+        claim_set_verification_max_evidence_items=int(
+            (raw.get("a_board") or {}).get(
+                "claim_set_verification_max_evidence_items",
+                ABoardRuntimeConfig.claim_set_verification_max_evidence_items,
+            )
+        ),
     )
 
     thinking_profiles = {
@@ -288,6 +319,7 @@ def _with_default_profiles(profiles: dict[str, ThinkingProfile]) -> dict[str, Th
         "multi_logicrag_option_verdict": ThinkingProfile(level="low", enabled=False, max_tokens=192),
         "multi_logicrag_option_retry": ThinkingProfile(level="low", enabled=True, max_tokens=192),
         "multi_logicrag_numeric_verifier": ThinkingProfile(level="low", enabled=True, max_tokens=320),
+        "claim_set_verification": ThinkingProfile(level="medium", enabled=True, max_tokens=768),
     }
     merged = dict(defaults)
     merged.update(profiles)
@@ -414,6 +446,36 @@ def _apply_env_overrides(config: LogicRAGRuntimeConfig) -> LogicRAGRuntimeConfig
             os.getenv(
                 "AFAC_A_BOARD_CLAIM_RETRY_VERDICT_MAX_EVIDENCE_ITEMS",
                 str(config.a_board.claim_retry_verdict_max_evidence_items),
+            )
+        ),
+        evidence_set_selection_enabled=_as_bool(
+            os.getenv(
+                "AFAC_A_BOARD_EVIDENCE_SET_SELECTION_ENABLED",
+                str(config.a_board.evidence_set_selection_enabled),
+            )
+        ),
+        claim_set_verification_enabled=_as_bool(
+            os.getenv(
+                "AFAC_A_BOARD_CLAIM_SET_VERIFICATION_ENABLED",
+                str(config.a_board.claim_set_verification_enabled),
+            )
+        ),
+        numeric_fact_ledger_enabled=_as_bool(
+            os.getenv(
+                "AFAC_A_BOARD_NUMERIC_FACT_LEDGER_ENABLED",
+                str(config.a_board.numeric_fact_ledger_enabled),
+            )
+        ),
+        claim_require_valid_citations=_as_bool(
+            os.getenv(
+                "AFAC_A_BOARD_CLAIM_REQUIRE_VALID_CITATIONS",
+                str(config.a_board.claim_require_valid_citations),
+            )
+        ),
+        claim_set_verification_max_evidence_items=int(
+            os.getenv(
+                "AFAC_A_BOARD_CLAIM_SET_VERIFICATION_MAX_EVIDENCE_ITEMS",
+                str(config.a_board.claim_set_verification_max_evidence_items),
             )
         ),
     )

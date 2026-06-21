@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+
+from agent.reasoning.fact_ledger import format_numeric_fact_ledger
 from agent.schemas import Question, RetrievalResult
 
 
@@ -35,6 +38,7 @@ def build_answer_messages(question: Question, evidence: list[RetrievalResult]) -
 规则:
 - mcq/tf 只能输出单个大写字母。
 - multi 输出所有正确选项，按字母排序，无分隔符。
+- answer 不得为空；证据不足时选择最可能答案并降低 confidence。
 - 证据不足时仅可降低 confidence；若必须作答，也只能给出受限猜测。
 - 不要为了弥补检索不足而展开泛化推理。
 - 不要输出冗长背景解释来补偿证据缺口。
@@ -109,11 +113,87 @@ def build_option_evidence_judgement_messages(
 - support 表示该选项准确，应进入答案。
 - refute 表示证据明确说明该选项错误。
 - insufficient 表示证据不足，不能用常识猜测。
+- 判断的是“该选项是否应被原题选中”，不能仅因括号内描述本身属实就判 support。
 - 不得使用外部知识，不得编造证据编号。
 - reason 必须引用关键原文事实，不要输出 Markdown。
 """
     return [
         {"role": "system", "content": f"{role} 你负责逐选项证据判断，只能依据给定证据。"},
+        {"role": "user", "content": user},
+    ]
+
+
+def build_claim_set_verification_messages(
+    question: Question,
+    verdicts: dict[str, dict],
+    claim_runs: dict[str, dict],
+    evidence: list[RetrievalResult],
+    fact_ledger: dict | None = None,
+) -> list[dict[str, str]]:
+    """构造逐选项完成后的集合级 exact-match 复核 Prompt。"""
+    role = DOMAIN_ROLES.get(question.domain, "你是金融长文本问答专家。")
+    options = "\n".join(f"{key}. {value}" for key, value in sorted(question.options.items()))
+    evidence_positions = {item.chunk_id: index for index, item in enumerate(evidence, start=1)}
+    local = {
+        key: {
+            "relation": value.get("relation"),
+            "confidence": value.get("confidence"),
+            # 局部判断和集合复核的证据编号空间不同，必须用 chunk_id 重映射。
+            "support_evidence": [
+                f"[{evidence_positions[chunk_id]}]"
+                for chunk_id in value.get("support_chunk_ids", [])
+                if chunk_id in evidence_positions
+            ],
+            "refute_evidence": [
+                f"[{evidence_positions[chunk_id]}]"
+                for chunk_id in value.get("refute_chunk_ids", [])
+                if chunk_id in evidence_positions
+            ],
+            "support_chunk_ids": value.get("support_chunk_ids", []),
+            "refute_chunk_ids": value.get("refute_chunk_ids", []),
+            "calibration_tags": value.get("calibration_tags", []),
+            "missing_slots": value.get("missing_slots", []),
+            "missing_universal_doc_ids": value.get("missing_universal_doc_ids", []),
+            "sufficiency": (claim_runs.get(key) or {}).get("sufficiency", {}),
+        }
+        for key, value in sorted(verdicts.items())
+    }
+    user = f"""请对逐选项结果做一次集合级复核，并输出最终精确答案。
+
+题型: {question.answer_format}
+题目: {question.question}
+选项:
+{options}
+
+局部 verdict（只是候选，不是最终真值）:
+{json.dumps(local, ensure_ascii=False)}
+
+原始证据:
+{format_evidence(evidence)}
+
+数值事实账本:
+{format_numeric_fact_ledger(fact_ledger or {})}
+
+只输出 JSON:
+{{
+  "answer": "A或ABCD",
+  "confidence": 0到1之间的小数,
+  "option_relations": {{"A":"support|refute|insufficient"}},
+  "reason": "不超过100字"
+}}
+
+复核规则:
+- support 必须由有效证据编号支持；calibration_tags 或 missing_slots 不得被忽略。
+- 含“均、都、双方、两份、两家、分别、所有”的选项，涉及的每份文档都必须有直接支持证据。
+- 含“且、并且、同时、以及、；”的复合选项，每个子条件都成立才可 support；任一子条件错误即 refute。
+- 数值、比例、同比、阈值和趋势只能依据数值事实账本及原始证据计算；必须统一单位，不得心算补值。
+- multi 必须输出所有且仅有正确选项，按字母排序；mcq/tf 只能输出一个字母。
+- answer 不得为空；即使证据仍不充分，也要给出最可能的合法选项集合并降低 confidence。
+- 若局部 verdict 冲突，以可直接定位的原始证据和账本为准，不以局部 confidence 投票。
+- 不得使用外部知识，不得编造证据或缺失数值。
+"""
+    return [
+        {"role": "system", "content": f"{role} 你负责证据集合校准和 exact-match 最终复核。"},
         {"role": "user", "content": user},
     ]
 
@@ -418,6 +498,6 @@ def format_evidence(evidence: list[RetrievalResult]) -> str:
         page = item.metadata.get("page")
         clause = item.metadata.get("clause_id", "")
         title = item.metadata.get("title", "")
-        prefix = f"[{idx}] doc={item.doc_id} title={title} page={page} clause={clause}"
+        prefix = f"[{idx}] doc={item.doc_id} chunk={item.chunk_id} title={title} page={page} clause={clause}"
         lines.append(f"{prefix}\n{item.evidence_text}")
     return "\n\n".join(lines)
