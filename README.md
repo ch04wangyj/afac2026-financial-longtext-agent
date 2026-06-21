@@ -1,6 +1,14 @@
 # AFAC2026 赛题四金融长文本 Agent
 
-面向 AFAC2026 赛题四的金融长文本答题仓库。当前版本已经收敛为**无 embedding 的正式默认主线**，并保留两条 **LogicRAG 实验线** 作为受支持但非默认的运行路径。
+面向 AFAC2026 赛题四的金融长文本答题仓库。当前代码为 **V11 candidate**：以无 embedding 的 sparse retrieval 为正式主线，在 A 榜质量模式中加入 claim-centric 检索、证据集合复核、财务指标行索引和受限计算 DSL；两条 LogicRAG 路径继续保留为实验线。
+
+| 状态 | 当前值 |
+|---|---|
+| 官方最佳版本 | V9 claim-centric retrieval |
+| 官方最佳得分 | **49.5701** |
+| 当前候选版本 | V11 financial row index + answer dev gate |
+| V11 官方得分 | 待提交验证，不以本地开发集代替榜单成绩 |
+| 当前可提交 A100 | 100 题，`total_tokens=1,030,141` |
 
 ## 当前版本提供什么
 
@@ -107,7 +115,7 @@ LogicRAG / thinking / 并发预算配置集中在：
 - `scripts/01_prepare_docs.py`：预处理原始文档
 - `scripts/02_build_index.py`：构建索引产物
 - `scripts/03_run_questions.py`：跑默认主线或指定 runtime strategy
-- `scripts/04_make_submission.py`：从 `answer_results.jsonl` 生成提交产物
+- `scripts/04_make_submission.py`：合并基础/覆盖结果，校验后生成提交产物
 - `scripts/06_smoke_by_domain.py`：按领域做 smoke
 - `scripts/07_run_sample.py`：按 sampleN 运行样本集
 - `scripts/08_report_results.py`：汇总 token / evidence / format 风险
@@ -168,7 +176,7 @@ python scripts\07_run_sample.py --sample-size 20 --per-domain 4 --seed 20260609 
 
 ---
 
-## A 榜质量模式（V10 candidate）
+## A 榜质量模式（V11 candidate）
 
 `--a-board-quality` 在 V9 claim-centric 路径上增加三层确定性约束：
 
@@ -176,6 +184,8 @@ python scripts\07_run_sample.py --sample-size 20 --per-domain 4 --seed 20260609 
 - **指标规范化检索**：选项实体优先，使用财报披露名词典和 weighted RRF 对跨公司比较端点做逐文档召回。
 - **claim 校准与集合级复核**：验证证据编号；对多选、证据不足、全称/复合/数值断言执行一次 exact-match 集合复核。
 - **数值事实账本**：确定性抽取指标、年份、原值、单位和规范化值，供最终复核核对；不执行模型生成代码。
+- **财务指标行索引**：将表格退化文本确定性转换为 `metric/year/value/unit/header/cells` 短 chunk，减少跨列错配。
+- **受限计算 DSL**：仅允许 `compare/difference/ratio/growth_rate`，操作数必须绑定已抽取事实并通过单位检查。
 
 ```powershell
 python scripts\07_run_sample.py --dry-run --a-board-quality --sample-size 20 --per-domain 4 --seed 20260621
@@ -183,7 +193,10 @@ python scripts\07_run_sample.py --a-board-quality --sample-size 20 --per-domain 
 python scripts\03_run_questions.py --a-board-quality
 ```
 
-该模式仍严格限制在题目给定的 `doc_ids` 内。新增组件只在质量模式启用，默认 `doc_first_bm25f_expansion` 主线行为不变。实验依据和边界见 `theory/references/notes/2026-06-21_v10-set-verification-and-fact-ledger.md`。
+该模式仍严格限制在题目给定的 `doc_ids` 内。新增组件只在质量模式启用，默认 `doc_first_bm25f_expansion` 主线行为不变。实验依据和边界见：
+
+- `theory/references/notes/2026-06-21_v10-set-verification-and-fact-ledger.md`
+- `theory/references/notes/2026-06-21_v11-financial-row-index-and-dev-gate.md`
 
 ### 财报指标行实验索引
 
@@ -201,6 +214,31 @@ python scripts\09_eval_answer_devset.py --results <answer_results_1.jsonl> <answ
 ```
 
 开发集位于 `devsets/answer_level_v1.jsonl`。人工标签必须绑定当前题面和数据版本；不能仅按 qid 复用官网旧示例答案。
+
+### 当前可提交 V11 candidate
+
+当前仓库中唯一完整 A100 底稿是 `outputs/a_full_adaptive/answer_results.jsonl`。以下命令只用 V11 已核验并发生答案变化的两道财报结果覆盖底稿，同时执行 100 题完整性、答案格式和 Token 一致性校验：
+
+```powershell
+python scripts\04_make_submission.py `
+  --results outputs\a_full_adaptive\answer_results.jsonl `
+  --override-results outputs\v11_financial_rows_live\answer_results.jsonl `
+  --output-dir outputs\submissions\v11_candidate_20260621 `
+  --require-complete
+```
+
+生成文件：`outputs/submissions/v11_candidate_20260621/answer.csv`。
+
+| 校验项 | 结果 |
+|---|---:|
+| 题目覆盖 | 100 / 100 |
+| 重复或额外 qid | 0 |
+| `fin_a_005` | `ABD` |
+| `fin_a_011` | `ACD` |
+| `summary.total_tokens` | 1,030,141 |
+| 文件编码 | UTF-8 with BOM |
+
+`reg_a_014` 的 V11 回归答案与底稿同为 `ABD`，因此提交候选保留 Token 更低的底稿记录。`outputs/` 按仓库规则不提交 Git，正式 CSV 由上述命令本地复现。
 
 ---
 
@@ -369,54 +407,20 @@ python scripts\04_make_submission.py --results <generated-answer_results.jsonl>
 ### 成功信号
 - 默认主线日志里出现：`retrieval_strategy=doc_first_bm25f_expansion`
 - 运行脚本输出：`wrote ... answer_results.jsonl`
-- 提交脚本输出：`wrote submission artifacts to ...`
+- 提交脚本输出：`wrote 100 validated submission rows to ...`
 
 ---
 
-## 准备推到 main 的检查清单
+## Git 协作检查清单
 
-在把当前分支合并到 `main` 之前，至少确认以下几点：
+当前协作目标分支为 `main`。每次推送前至少确认：
 
-- [ ] `README.md` 与当前保留主线/实验线一致
-- [ ] README 和顶层 docs 不再引用已删除脚本
-- [ ] 默认主线 / LogicRAG 的最小验证集通过
-- [ ] smoke 命令能真实跑通
-- [ ] 输出目录说明与 `docs/output-layout.md` 一致
-- [ ] 版本/分支说明足以让 reviewer 识别 **Keep / Removed / Experimental** 边界
-- [ ] 提交作者身份使用 GitHub 允许的 noreply email
-
-推荐合并方式：
-1. 从 `ARS` 开 PR 到 `main`
-2. 在 PR 描述中明确：保留主线、保留 LogicRAG、移除历史 compare/probe 面
-3. 附上最小验证命令与结果
-4. 通过 review 后 squash merge 到 `main`
-
----
-
-## 给 reviewer 的建议 PR 摘要模板
-
-```md
-## Summary
-- Refresh README for the retained default mainline and LogicRAG experiment lines
-- Remove stale top-level references to deleted compare/probe workflows
-- Align output-layout and release-readiness instructions with the current branch
-
-## Kept
-- `doc_first_bm25f_expansion`
-- `logicrag_qwen_rrf`
-- `logicrag_agent`
-
-## Removed from active docs surface
-- deleted compare/probe scripts
-- legacy retrieval variants as active runtime entrypoints
-
-## Validation
-- runtime strategy contract tests
-- default retrieval strategy test
-- LogicRAG retrieval / solver tests
-- output layout tests
-- dry-run smoke + submission artifact generation
-```
+- [ ] `git fetch origin` 后本地 `main` 未落后远端
+- [ ] 未暂存 `.env`、`outputs/`、`processed_data/` 或真实 API Key
+- [ ] 相关测试和 `python -m compileall agent scripts tests` 通过
+- [ ] README、`VERSION_SCORE_LOG.md` 与运行时代码口径一致
+- [ ] 正式 CSV 通过 `--require-complete` 校验
+- [ ] 只有官网真实提交结果才能更新“当前最佳得分”
 
 ---
 
