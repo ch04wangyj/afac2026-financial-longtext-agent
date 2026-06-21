@@ -25,6 +25,16 @@ def test_build_option_queries_keeps_each_option_separate():
     assert all("净利润下降" not in query for query in queries["A"])
 
 
+
+def test_build_option_queries_remains_backward_compatible():
+    queries = build_option_queries(_question())
+
+    assert set(queries) == {"A", "B"}
+    assert all(isinstance(row, list) for row in queries.values())
+    assert all(isinstance(query, str) for row in queries.values() for query in row)
+
+
+
 def test_retrieve_option_candidates_returns_candidates_by_option():
     class FakeIndex:
         def search(self, query, top_k, filter_doc_ids=None, source=""):

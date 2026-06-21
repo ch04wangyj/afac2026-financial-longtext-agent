@@ -3,9 +3,9 @@
 > 只记录两类信息：**真实提交得分**、**相对上一轮引入的关键改动**。
 
 ## 当前最佳
-- **最佳版本**：2026-06-18 A-board quality 版本
-- **最佳得分**：**40.5015**
-- **相对历史最佳提升**：`+0.5513`
+- **最佳版本**：2026-06-21 claim-centric retrieval 版本
+- **最佳得分**：**49.5701**
+- **相对上一历史最佳提升**：`+2.2477`
 
 ---
 
@@ -78,6 +78,27 @@
   - 按第一阶段目标，将 LogicRAG 主路进一步收敛到 **paper-faithful** 执行语义，补齐 planner / DAG contract、rank-wise retrieval linearization 与 pruning 行为约束。
   - 将运行时配置、prompt contract 与测试约束显式化，新增 Phase 1 hardening 所需的 runtime defaults、thinking budget hierarchy 与对应回归测试。
   - 完成第一阶段 validation：跑通 focused regression、sample20 与新的完整 A100，本地产物目录为 `outputs/phase1_validation_a100_2026-06-19_160310`。
+
+---
+
+## V8｜2026-06-21 LLM LogicRAG adaptive retrieval 版本
+- **得分**：**47.3224**
+- **相对上一轮变化**：`+7.7116`
+- **相对历史最佳变化**：`+6.8209`
+- **相对 V7 新引入的关键改动**：
+  - 将非 multi 的 `logicrag_agent` 主路径升级为 LLM 主导的 adaptive retrieval loop：LLM 生成 rank query bundles、LLM sufficiency gate 判断证据是否足够，不足时由 LLM 重写下一轮检索方向。
+  - 保留 A 榜 `doc_ids` 严格约束；本轮 adaptive rank metadata 记录 query、scope、sufficiency、rounds 与 exhausted 状态。
+  - 完成 focused regression、非 multi 真实 smoke 与完整 A100 实跑；本地产物目录为 `outputs/adaptive_logicrag_a100_20260621_004712`，提交文件为 `answer.csv`。
+
+---
+
+## V9｜2026-06-21 claim-centric retrieval 版本
+- **得分**：**49.5701**
+- **相对上一轮变化**：`+2.2477`
+- **相对 V8 新引入的关键改动**：
+  - 将 `multi` 与 `mcq` 统一重构为 **claim-centric retrieval**：先按 option-level claim 建模，再共享 claim target / query bundles / sufficiency / refinement / verdict 流程。
+  - 为 claim-centric 路径加入显式 token budget 控制：限制 claim query bundles、最多一轮 refinement、限制 verdict prompt 的 evidence 条数，并默认关闭 claim final compose。
+  - 完成 focused regression、sample20 gate 与完整 A100 实跑；本地产物目录为 `outputs/claim_centric_a100_20260621_121023`，提交文件为 `answer.csv`。
 
 ---
 

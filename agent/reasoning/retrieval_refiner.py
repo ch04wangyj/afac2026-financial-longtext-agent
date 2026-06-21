@@ -16,6 +16,42 @@ class RetrievalRefinementResult:
     avoid_terms: list[str] = field(default_factory=list)
 
 
+@dataclass
+class LogicRAGQueryBundle:
+    query: str
+    intent: str = ""
+    evidence_type: str = ""
+    must_terms: list[str] = field(default_factory=list)
+    doc_scope_hint: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "query": self.query,
+            "intent": self.intent,
+            "evidence_type": self.evidence_type,
+            "must_terms": list(self.must_terms),
+            "doc_scope_hint": list(self.doc_scope_hint),
+        }
+
+
+@dataclass
+class LogicRAGSufficiencyJudgement:
+    sufficient: bool = False
+    failure_tags: list[str] = field(default_factory=list)
+    reason: str = ""
+    missing_evidence: str = ""
+    next_search_goal: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "sufficient": self.sufficient,
+            "failure_tags": list(self.failure_tags),
+            "reason": self.reason,
+            "missing_evidence": self.missing_evidence,
+            "next_search_goal": self.next_search_goal,
+        }
+
+
 def should_trigger_retrieval_refinement(*, domain: str, sufficiency: dict) -> tuple[bool, str]:
     failure_tags = list(sufficiency.get("failure_tags") or [])
     if sufficiency.get("sufficient"):
@@ -41,6 +77,44 @@ def parse_retrieval_refinement_result(raw_text: str) -> RetrievalRefinementResul
         refined_queries=_dedupe([str(item) for item in (obj.get("refined_queries") or [])])[:6],
         keep_terms=_dedupe([str(item) for item in (obj.get("keep_terms") or [])])[:8],
         avoid_terms=_dedupe([str(item) for item in (obj.get("avoid_terms") or [])])[:8],
+    )
+
+
+def parse_logicrag_query_bundles(raw_text: str, max_bundles: int = 4) -> list[LogicRAGQueryBundle]:
+    obj = extract_json_object(raw_text) or {}
+    rows = obj.get("query_bundles") or obj.get("queries") or []
+    output: list[LogicRAGQueryBundle] = []
+    seen: set[str] = set()
+    for row in rows:
+        data = {} if isinstance(row, str) else dict(row or {})
+        query = " ".join((row if isinstance(row, str) else str(data.get("query", ""))).split())
+        if not query or query in seen:
+            continue
+        seen.add(query)
+        output.append(
+            LogicRAGQueryBundle(
+                query=query,
+                intent=" ".join(str(data.get("intent", "")).split()),
+                evidence_type=" ".join(str(data.get("evidence_type", "")).split()),
+                must_terms=_dedupe([str(item) for item in data.get("must_terms", [])])[:8],
+                doc_scope_hint=_dedupe([str(item) for item in data.get("doc_scope_hint", [])])[:8],
+            )
+        )
+        if len(output) >= max_bundles:
+            break
+    return output
+
+
+def parse_logicrag_sufficiency_judgement(raw_text: str) -> LogicRAGSufficiencyJudgement:
+    obj = extract_json_object(raw_text) or {}
+    raw_sufficient = obj.get("sufficient", obj.get("enough", 0))
+    sufficient = raw_sufficient is True or str(raw_sufficient).strip() == "1"
+    return LogicRAGSufficiencyJudgement(
+        sufficient=sufficient,
+        failure_tags=_dedupe([str(item) for item in obj.get("failure_tags", [])])[:6],
+        reason=" ".join(str(obj.get("reason", "")).split())[:120],
+        missing_evidence=" ".join(str(obj.get("missing_evidence", "")).split())[:160],
+        next_search_goal=" ".join(str(obj.get("next_search_goal", "")).split())[:160],
     )
 
 

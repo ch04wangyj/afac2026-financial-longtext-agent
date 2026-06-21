@@ -42,6 +42,12 @@ class LogicRAGSection:
     dynamic_dag_augmentation: bool = True
     append_unresolved_after_current_rank: bool = True
     sampling_without_replacement: bool = True
+    adaptive_retrieval_enabled: bool = False
+    llm_query_bundles_enabled: bool = True
+    max_query_bundles_per_rank: int = 4
+    max_refinement_rounds_per_rank: int = 1
+    b_board_scope_narrowing_enabled: bool = True
+    narrowed_doc_top_n: int = 5
     max_subproblems: int = 6
     max_ranks: int = 4
     rank_top_k: int = 5
@@ -62,6 +68,13 @@ class ABoardRuntimeConfig:
     max_option_candidates: int = 12
     max_verifier_candidates_per_option: int = 6
     low_confidence_threshold: float = 0.65
+    claim_centric_multi_enabled: bool = False
+    claim_centric_mcq_enabled: bool = False
+    max_claim_refinement_rounds: int = 1
+    max_claim_query_bundles: int = 5
+    claim_final_compose_enabled: bool = False
+    claim_verdict_max_evidence_items: int = 6
+    claim_retry_verdict_max_evidence_items: int = 8
 
 
 @dataclass(frozen=True)
@@ -117,6 +130,26 @@ def load_logicrag_runtime_config(path: Path | None = None) -> LogicRAGRuntimeCon
                 "sampling_without_replacement", LogicRAGSection.sampling_without_replacement
             )
         ),
+        adaptive_retrieval_enabled=_as_bool(
+            (raw.get("logicrag") or {}).get("adaptive_retrieval_enabled", LogicRAGSection.adaptive_retrieval_enabled)
+        ),
+        llm_query_bundles_enabled=_as_bool(
+            (raw.get("logicrag") or {}).get("llm_query_bundles_enabled", LogicRAGSection.llm_query_bundles_enabled)
+        ),
+        max_query_bundles_per_rank=int(
+            (raw.get("logicrag") or {}).get("max_query_bundles_per_rank", LogicRAGSection.max_query_bundles_per_rank)
+        ),
+        max_refinement_rounds_per_rank=int(
+            (raw.get("logicrag") or {}).get(
+                "max_refinement_rounds_per_rank", LogicRAGSection.max_refinement_rounds_per_rank
+            )
+        ),
+        b_board_scope_narrowing_enabled=_as_bool(
+            (raw.get("logicrag") or {}).get(
+                "b_board_scope_narrowing_enabled", LogicRAGSection.b_board_scope_narrowing_enabled
+            )
+        ),
+        narrowed_doc_top_n=int((raw.get("logicrag") or {}).get("narrowed_doc_top_n", LogicRAGSection.narrowed_doc_top_n)),
         max_subproblems=int((raw.get("logicrag") or {}).get("max_subproblems", LogicRAGSection.max_subproblems)),
         max_ranks=int((raw.get("logicrag") or {}).get("max_ranks", LogicRAGSection.max_ranks)),
         rank_top_k=int((raw.get("logicrag") or {}).get("rank_top_k", LogicRAGSection.rank_top_k)),
@@ -175,6 +208,41 @@ def load_logicrag_runtime_config(path: Path | None = None) -> LogicRAGRuntimeCon
                 "low_confidence_threshold", ABoardRuntimeConfig.low_confidence_threshold
             )
         ),
+        claim_centric_multi_enabled=_as_bool(
+            (raw.get("a_board") or {}).get(
+                "claim_centric_multi_enabled", ABoardRuntimeConfig.claim_centric_multi_enabled
+            )
+        ),
+        claim_centric_mcq_enabled=_as_bool(
+            (raw.get("a_board") or {}).get(
+                "claim_centric_mcq_enabled", ABoardRuntimeConfig.claim_centric_mcq_enabled
+            )
+        ),
+        max_claim_refinement_rounds=int(
+            (raw.get("a_board") or {}).get(
+                "max_claim_refinement_rounds", ABoardRuntimeConfig.max_claim_refinement_rounds
+            )
+        ),
+        max_claim_query_bundles=int(
+            (raw.get("a_board") or {}).get(
+                "max_claim_query_bundles", ABoardRuntimeConfig.max_claim_query_bundles
+            )
+        ),
+        claim_final_compose_enabled=_as_bool(
+            (raw.get("a_board") or {}).get(
+                "claim_final_compose_enabled", ABoardRuntimeConfig.claim_final_compose_enabled
+            )
+        ),
+        claim_verdict_max_evidence_items=int(
+            (raw.get("a_board") or {}).get(
+                "claim_verdict_max_evidence_items", ABoardRuntimeConfig.claim_verdict_max_evidence_items
+            )
+        ),
+        claim_retry_verdict_max_evidence_items=int(
+            (raw.get("a_board") or {}).get(
+                "claim_retry_verdict_max_evidence_items", ABoardRuntimeConfig.claim_retry_verdict_max_evidence_items
+            )
+        ),
     )
 
     thinking_profiles = {
@@ -209,6 +277,9 @@ def _with_default_profiles(profiles: dict[str, ThinkingProfile]) -> dict[str, Th
     defaults = {
         "answer_single_pass": ThinkingProfile(level="low", enabled=False, max_tokens=384),
         "logicrag_planner": ThinkingProfile(level="high", enabled=True, max_tokens=1024),
+        "logicrag_query_bundle": ThinkingProfile(level="medium", enabled=True, max_tokens=512),
+        "logicrag_sufficiency_gate": ThinkingProfile(level="low", enabled=False, max_tokens=192),
+        "logicrag_refinement": ThinkingProfile(level="medium", enabled=True, max_tokens=512),
         "logicrag_rank_summary": ThinkingProfile(level="medium", enabled=True, max_tokens=640),
         "logicrag_final_compose": ThinkingProfile(level="high", enabled=True, max_tokens=1024),
         "option_judgement": ThinkingProfile(level="low", enabled=False, max_tokens=192),
@@ -251,6 +322,28 @@ def _apply_env_overrides(config: LogicRAGRuntimeConfig) -> LogicRAGRuntimeConfig
                 str(config.logicrag.sampling_without_replacement),
             )
         ),
+        adaptive_retrieval_enabled=_as_bool(
+            os.getenv("AFAC_LOGICRAG_ADAPTIVE_RETRIEVAL_ENABLED", str(config.logicrag.adaptive_retrieval_enabled))
+        ),
+        llm_query_bundles_enabled=_as_bool(
+            os.getenv("AFAC_LOGICRAG_LLM_QUERY_BUNDLES_ENABLED", str(config.logicrag.llm_query_bundles_enabled))
+        ),
+        max_query_bundles_per_rank=int(
+            os.getenv("AFAC_LOGICRAG_MAX_QUERY_BUNDLES_PER_RANK", str(config.logicrag.max_query_bundles_per_rank))
+        ),
+        max_refinement_rounds_per_rank=int(
+            os.getenv(
+                "AFAC_LOGICRAG_MAX_REFINEMENT_ROUNDS_PER_RANK",
+                str(config.logicrag.max_refinement_rounds_per_rank),
+            )
+        ),
+        b_board_scope_narrowing_enabled=_as_bool(
+            os.getenv(
+                "AFAC_LOGICRAG_B_BOARD_SCOPE_NARROWING_ENABLED",
+                str(config.logicrag.b_board_scope_narrowing_enabled),
+            )
+        ),
+        narrowed_doc_top_n=int(os.getenv("AFAC_LOGICRAG_NARROWED_DOC_TOP_N", str(config.logicrag.narrowed_doc_top_n))),
         max_subproblems=int(os.getenv("AFAC_LOGICRAG_MAX_SUBPROBLEMS", str(config.logicrag.max_subproblems))),
         max_ranks=int(os.getenv("AFAC_LOGICRAG_MAX_RANKS", str(config.logicrag.max_ranks))),
         rank_top_k=int(os.getenv("AFAC_LOGICRAG_RANK_TOP_K", str(config.logicrag.rank_top_k))),
@@ -295,6 +388,33 @@ def _apply_env_overrides(config: LogicRAGRuntimeConfig) -> LogicRAGRuntimeConfig
         ),
         low_confidence_threshold=float(
             os.getenv("AFAC_A_BOARD_LOW_CONFIDENCE_THRESHOLD", str(config.a_board.low_confidence_threshold))
+        ),
+        claim_centric_multi_enabled=_as_bool(
+            os.getenv("AFAC_A_BOARD_CLAIM_CENTRIC_MULTI_ENABLED", str(config.a_board.claim_centric_multi_enabled))
+        ),
+        claim_centric_mcq_enabled=_as_bool(
+            os.getenv("AFAC_A_BOARD_CLAIM_CENTRIC_MCQ_ENABLED", str(config.a_board.claim_centric_mcq_enabled))
+        ),
+        max_claim_refinement_rounds=int(
+            os.getenv("AFAC_A_BOARD_MAX_CLAIM_REFINEMENT_ROUNDS", str(config.a_board.max_claim_refinement_rounds))
+        ),
+        max_claim_query_bundles=int(
+            os.getenv("AFAC_A_BOARD_MAX_CLAIM_QUERY_BUNDLES", str(config.a_board.max_claim_query_bundles))
+        ),
+        claim_final_compose_enabled=_as_bool(
+            os.getenv("AFAC_A_BOARD_CLAIM_FINAL_COMPOSE_ENABLED", str(config.a_board.claim_final_compose_enabled))
+        ),
+        claim_verdict_max_evidence_items=int(
+            os.getenv(
+                "AFAC_A_BOARD_CLAIM_VERDICT_MAX_EVIDENCE_ITEMS",
+                str(config.a_board.claim_verdict_max_evidence_items),
+            )
+        ),
+        claim_retry_verdict_max_evidence_items=int(
+            os.getenv(
+                "AFAC_A_BOARD_CLAIM_RETRY_VERDICT_MAX_EVIDENCE_ITEMS",
+                str(config.a_board.claim_retry_verdict_max_evidence_items),
+            )
         ),
     )
     concurrency = ConcurrencyConfig(

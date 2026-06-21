@@ -13,6 +13,18 @@ thinking_profiles:
     level: high
     enabled: true
     max_tokens: 1024
+  logicrag_query_bundle:
+    level: medium
+    enabled: true
+    max_tokens: 512
+  logicrag_sufficiency_gate:
+    level: low
+    enabled: false
+    max_tokens: 192
+  logicrag_refinement:
+    level: medium
+    enabled: true
+    max_tokens: 512
   logicrag_rank_summary:
     level: medium
     enabled: true
@@ -53,6 +65,12 @@ logicrag:
   dynamic_dag_augmentation: true
   append_unresolved_after_current_rank: true
   sampling_without_replacement: true
+  adaptive_retrieval_enabled: false
+  llm_query_bundles_enabled: true
+  max_query_bundles_per_rank: 4
+  max_refinement_rounds_per_rank: 1
+  b_board_scope_narrowing_enabled: true
+  narrowed_doc_top_n: 5
   max_subproblems: 6
   max_ranks: 4
   rank_top_k: 5
@@ -75,3 +93,10 @@ a_board:
   max_option_candidates: 12
   max_verifier_candidates_per_option: 6
   low_confidence_threshold: 0.65
+  claim_centric_multi_enabled: false
+  claim_centric_mcq_enabled: false
+  max_claim_refinement_rounds: 1
+  max_claim_query_bundles: 5
+  claim_final_compose_enabled: false
+  claim_verdict_max_evidence_items: 6
+  claim_retry_verdict_max_evidence_items: 8

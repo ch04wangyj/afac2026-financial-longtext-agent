@@ -32,6 +32,13 @@ def build_runtime_config(
     multi_logicrag_enabled: bool = True,
     multi_logicrag_retry_enabled: bool = True,
     coverage_gate_enabled: bool = False,
+    claim_centric_multi_enabled: bool = False,
+    claim_centric_mcq_enabled: bool = False,
+    max_claim_refinement_rounds: int = 1,
+    max_claim_query_bundles: int = 5,
+    claim_final_compose_enabled: bool = False,
+    claim_verdict_max_evidence_items: int = 6,
+    claim_retry_verdict_max_evidence_items: int = 8,
 ) -> LogicRAGRuntimeConfig:
     return LogicRAGRuntimeConfig(
         qwen=QwenRuntimeConfig(),
@@ -45,6 +52,13 @@ def build_runtime_config(
             force_doc_coverage_for_a_board=True,
             use_doc_ids_as_hint_only=False,
             financial_calculator_enabled=False,
+            claim_centric_multi_enabled=claim_centric_multi_enabled,
+            claim_centric_mcq_enabled=claim_centric_mcq_enabled,
+            max_claim_refinement_rounds=max_claim_refinement_rounds,
+            max_claim_query_bundles=max_claim_query_bundles,
+            claim_final_compose_enabled=claim_final_compose_enabled,
+            claim_verdict_max_evidence_items=claim_verdict_max_evidence_items,
+            claim_retry_verdict_max_evidence_items=claim_retry_verdict_max_evidence_items,
         ),
         concurrency=ConcurrencyConfig(),
     )
@@ -397,6 +411,116 @@ class LogicRAGSolverTest(unittest.TestCase):
             any("2025" in query and "收入下降" in query for query in result.metadata["option_runs"]["B"]["retry_queries"])
         )
         self.assertIn("refinement_triggered", result.metadata["option_runs"]["B"])
+
+    def test_solver_uses_claim_centric_multi_route_when_enabled(self):
+        question = Question(
+            qid="q_claim_multi",
+            domain="financial_reports",
+            split="A",
+            question="根据财报披露，以下哪些说法正确？",
+            options={"A": "2025 年收入增长", "B": "2025 年收入下降", "C": "研发费用增加"},
+            answer_format="multi",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(retrieval_strategy="logicrag_agent", logicrag_enabled=True, answer_max_tokens=128)
+        fake_llm = FakeMultiLogicLLM(settings)
+        with patch(
+            "agent.reasoning.solver.load_logicrag_runtime_config",
+            return_value=build_runtime_config(claim_centric_multi_enabled=True),
+        ):
+            solver = Solver(FakeLogicRetriever(), RuleEvidenceCompressor(max_chars=1200, top_k=3), fake_llm)
+
+        result = solver.solve(question)
+
+        self.assertEqual(result.answer, "AC")
+        self.assertEqual(result.metadata["strategy"], "claim_centric_multi")
+        self.assertEqual(set(result.metadata["claim_runs"].keys()), {"A", "B", "C"})
+        self.assertEqual(result.metadata["answer_assembly_policy"], "multi_all_supported")
+        self.assertIn("token_budget_policy", result.metadata)
+        self.assertFalse(result.metadata["token_budget_policy"]["claim_final_compose_enabled"])
+
+    def test_solver_uses_claim_centric_mcq_route_when_enabled(self):
+        question = Question(
+            qid="q_claim_mcq",
+            domain="regulatory",
+            split="A",
+            question="根据客户尽职调查要求，银行是否必须识别受益所有人并保存身份资料？",
+            options={"A": "不需要识别受益所有人", "B": "需要识别受益所有人并保存身份资料"},
+            answer_format="mcq",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(retrieval_strategy="logicrag_agent", logicrag_enabled=True, answer_max_tokens=128)
+        fake_llm = FakeClaimMcqLLM(settings)
+        with patch(
+            "agent.reasoning.solver.load_logicrag_runtime_config",
+            return_value=build_runtime_config(claim_centric_mcq_enabled=True),
+        ):
+            solver = Solver(FakeLogicRetriever(), RuleEvidenceCompressor(max_chars=1200, top_k=3), fake_llm)
+
+        result = solver.solve(question)
+
+        self.assertEqual(result.answer, "B")
+        self.assertEqual(result.metadata["strategy"], "claim_centric_mcq")
+        self.assertEqual(result.metadata["answer_assembly_policy"], "single_strongest_supported")
+        self.assertEqual(set(result.metadata["claim_runs"].keys()), {"A", "B"})
+
+    def test_claim_centric_route_records_required_claim_run_metadata(self):
+        question = Question(
+            qid="q_claim_meta",
+            domain="financial_reports",
+            split="A",
+            question="根据财报披露，以下哪些说法正确？",
+            options={"A": "2025 年收入增长", "B": "2025 年收入下降"},
+            answer_format="multi",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(retrieval_strategy="logicrag_agent", logicrag_enabled=True, answer_max_tokens=128)
+        fake_llm = FakeRetryMultiLogicLLM(settings)
+        with patch(
+            "agent.reasoning.solver.load_logicrag_runtime_config",
+            return_value=build_runtime_config(claim_centric_multi_enabled=True),
+        ):
+            solver = Solver(RetryAwareRetriever(), RuleEvidenceCompressor(max_chars=1200, top_k=3), fake_llm)
+
+        result = solver.solve(question)
+
+        required = {
+            "claim_id",
+            "option_key",
+            "claim_type",
+            "query_bundles",
+            "evidence_doc_ids",
+            "evidence_chunk_ids",
+            "sufficiency",
+            "retried",
+            "refinement",
+            "relation",
+            "confidence",
+        }
+        self.assertTrue(required.issubset(set(result.metadata["claim_runs"]["A"].keys())))
+
+    def test_claim_centric_route_records_token_budget_policy(self):
+        question = Question(
+            qid="q_claim_budget",
+            domain="financial_reports",
+            split="A",
+            question="根据财报披露，以下哪些说法正确？",
+            options={"A": "2025 年收入增长", "B": "2025 年收入下降"},
+            answer_format="multi",
+            doc_ids=["doc1"],
+        )
+        settings = Settings(retrieval_strategy="logicrag_agent", logicrag_enabled=True, answer_max_tokens=128)
+        fake_llm = FakeRetryMultiLogicLLM(settings)
+        with patch(
+            "agent.reasoning.solver.load_logicrag_runtime_config",
+            return_value=build_runtime_config(claim_centric_multi_enabled=True),
+        ):
+            solver = Solver(RetryAwareRetriever(), RuleEvidenceCompressor(max_chars=1200, top_k=3), fake_llm)
+
+        result = solver.solve(question)
+
+        self.assertIs(result.metadata["token_budget_policy"]["claim_final_compose_enabled"], False)
+        self.assertLessEqual(result.metadata["token_budget_policy"]["max_claim_refinement_rounds"], 1)
 
     def test_logicrag_agent_records_rank_sufficiency_report(self):
         question = Question(
@@ -760,6 +884,26 @@ class FakeMultiLogicLLM:
         return LLMResponse(text=text, usage=TokenUsage(prompt_tokens=2, completion_tokens=2))
 
 
+class FakeClaimMcqLLM:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.calls = []
+
+    def chat(self, messages, temperature=0.0, max_tokens=0, enable_thinking=None, thinking_profile=None):
+        if thinking_profile is not None:
+            max_tokens = thinking_profile.max_tokens
+            enable_thinking = thinking_profile.enabled
+        self.calls.append({"max_tokens": max_tokens, "enable_thinking": enable_thinking})
+        prompt = "\n".join(message.get("content", "") for message in messages)
+        if "不需要识别受益所有人" in prompt:
+            text = '{"option":"A","relation":"refute","confidence":0.90,"refute_evidence":["[1]"],"reason":"法规要求识别受益所有人"}'
+        elif "需要识别受益所有人并保存身份资料" in prompt:
+            text = '{"option":"B","relation":"support","confidence":0.96,"support_evidence":["[1]","[2]"],"reason":"法规明确要求识别并留存资料"}'
+        else:
+            raise AssertionError(f"unexpected prompt: {prompt}")
+        return LLMResponse(text=text, usage=TokenUsage(prompt_tokens=2, completion_tokens=2))
+
+
 class FakeRetryMultiLogicLLM:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -802,6 +946,132 @@ class FakeFinancialExtractionLLM:
         else:
             text = '{"metric_values":[{"entity":"美的集团","year":"2025","metric":"营业收入","value":"456,451,731","unit":"千元","evidence_id":"[1]"}],"missing_metrics":[]}'
         return LLMResponse(text=text, usage=TokenUsage(prompt_tokens=2, completion_tokens=2))
+
+
+
+class AdaptiveLogicRetriever(FakeLogicRetriever):
+    def __init__(self) -> None:
+        self.index = AdaptiveLogicIndex()
+        self.doc_index = None
+        self.top_k_per_query = 2
+        self.fused_top_k = 3
+        self.strategy = "logicrag_agent"
+        self.blind_top_docs = 4
+
+
+class AdaptiveLogicIndex:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def search(self, query, top_k=2, filter_doc_ids=None, source="test"):
+        self.calls.append((source, query, set(filter_doc_ids) if filter_doc_ids else None))
+        if "具体后果条款" in query:
+            return [
+                RetrievalResult(
+                    chunk_id="adaptive_specific",
+                    doc_id="doc1",
+                    domain="regulatory",
+                    score=2.0,
+                    source=source,
+                    query=query,
+                    evidence_text="具体后果条款：银行必须识别受益所有人并保存客户身份资料。",
+                    metadata={"page": 5, "title": "客户尽职调查办法"},
+                )
+            ]
+        return [
+            RetrievalResult(
+                chunk_id="adaptive_generic",
+                doc_id="doc1",
+                domain="regulatory",
+                score=1.0,
+                source=source,
+                query=query,
+                evidence_text="泛页：本办法说明客户尽职调查的一般原则。",
+                metadata={"page": 1, "title": "客户尽职调查办法"},
+            )
+        ]
+
+
+class FakeAdaptiveLogicLLM(FakeLogicLLM):
+    def chat(self, messages, temperature=0.0, max_tokens=0, enable_thinking=None, thinking_profile=None):
+        if thinking_profile is not None:
+            max_tokens = thinking_profile.max_tokens
+            enable_thinking = thinking_profile.enabled
+        self.calls.append({"max_tokens": max_tokens, "enable_thinking": enable_thinking})
+        prompt = "\n".join(message.get("content", "") for message in messages)
+        self.prompts.append(prompt)
+        if "LogicRAG规划器" in prompt:
+            return LLMResponse(
+                text='{"subproblems":[{"id":"n1","text":"定位受益所有人识别义务","depends_on":[]}],"rationale":"定位义务。"}',
+                usage=TokenUsage(prompt_tokens=5, completion_tokens=4),
+            )
+        if "直接提出检索组合" in prompt:
+            return LLMResponse(
+                text='{"query_bundles":[{"query":"受益所有人 一般原则","intent":"find_rule_context","evidence_type":"definition"}]}',
+                usage=TokenUsage(prompt_tokens=4, completion_tokens=3),
+            )
+        if "证据是否足够" in prompt or "证据充分性判断" in prompt or "是否足够回答" in prompt:
+            if "具体后果条款" in prompt:
+                text = '{"sufficient":1,"failure_tags":[],"reason":"已找到具体义务和留存要求","missing_evidence":"","next_search_goal":""}'
+            else:
+                text = '{"sufficient":0,"failure_tags":["generic_context_only"],"reason":"只有泛页","missing_evidence":"缺少具体后果条款","next_search_goal":"查找具体后果条款"}'
+            return LLMResponse(text=text, usage=TokenUsage(prompt_tokens=3, completion_tokens=2))
+        if "重新思考下一轮检索方向" in prompt:
+            return LLMResponse(
+                text='{"query_bundles":[{"query":"受益所有人 具体后果条款 保存客户身份资料","intent":"find_clause_consequence","evidence_type":"clause_consequence"}]}',
+                usage=TokenUsage(prompt_tokens=4, completion_tokens=3),
+            )
+        if "LogicRAG memory summary" in prompt:
+            return LLMResponse(text="已找到具体后果条款和资料保存要求。", usage=TokenUsage(prompt_tokens=4, completion_tokens=3))
+        if "LogicRAG final compose" in prompt:
+            return LLMResponse(
+                text='{"answer":"B","confidence":0.86,"reason":"证据明确要求识别受益所有人并保存身份资料"}',
+                usage=TokenUsage(prompt_tokens=4, completion_tokens=4),
+            )
+        raise AssertionError(f"unexpected prompt: {prompt}")
+
+
+def test_logicrag_adaptive_retrieval_refines_when_sufficiency_fails():
+    question = Question(
+        qid="q_logicrag_adaptive",
+        domain="regulatory",
+        split="A",
+        question="根据客户尽职调查要求，银行是否必须识别受益所有人并保存身份资料？",
+        options={"A": "不需要识别受益所有人", "B": "需要识别受益所有人并保存身份资料"},
+        answer_format="mcq",
+        doc_ids=["doc1"],
+    )
+    settings = Settings(
+        retrieval_strategy="logicrag_agent",
+        logicrag_enabled=True,
+        logicrag_max_subproblems=4,
+        logicrag_max_ranks=3,
+        logicrag_rank_top_k=2,
+        logicrag_memory_chars=800,
+        logicrag_plan_max_tokens=256,
+        logicrag_summary_max_tokens=128,
+        answer_max_tokens=128,
+    )
+    runtime = LogicRAGRuntimeConfig(
+        qwen=QwenRuntimeConfig(),
+        thinking_profiles=build_thinking_profiles(),
+        logicrag=LogicRAGSection(adaptive_retrieval_enabled=True, max_refinement_rounds_per_rank=1),
+        a_board=ABoardRuntimeConfig(use_doc_ids_as_hint_only=False),
+        concurrency=ConcurrencyConfig(),
+    )
+    retriever = AdaptiveLogicRetriever()
+    with patch("agent.reasoning.solver.load_logicrag_runtime_config", return_value=runtime):
+        solver = Solver(retriever, RuleEvidenceCompressor(max_chars=1200, top_k=3), FakeAdaptiveLogicLLM(settings))
+
+    result = solver.solve(question)
+
+    adaptive = result.metadata["rank_runs"][0]["adaptive_retrieval"]
+    assert result.answer == "B"
+    assert adaptive["rounds"][0]["sufficiency"]["sufficient"] is False
+    assert adaptive["rounds"][1]["queries"] == ["受益所有人 具体后果条款 保存客户身份资料"]
+    assert adaptive["exhausted"] is False
+    assert any(source == "logicrag_agent_rank_0_round_1" for source, _query, _scope in retriever.index.calls)
+    assert all(scope == {"doc1"} for _source, _query, scope in retriever.index.calls)
 
 
 if __name__ == "__main__":

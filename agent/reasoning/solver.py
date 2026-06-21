@@ -8,6 +8,12 @@ from agent.compress.rule_filter import RuleEvidenceCompressor
 from agent.llm.qwen_client import QwenClient
 from agent.reasoning import logicrag, multi_logicrag
 from agent.reasoning.answer_parser import extract_json_object, parse_answer, parse_verdict
+from agent.reasoning.claim_verifier import (
+    analyze_claim_evidence_sufficiency,
+    assemble_claim_answer,
+    build_claim_refinement,
+    should_refine_claim,
+)
 from agent.reasoning.option_matrix import OptionVerdict, parse_option_verdict, synthesize_answer
 from agent.reasoning.retrieval_refiner import build_lightweight_refined_queries, should_trigger_retrieval_refinement
 from agent.reasoning.prompts import (
@@ -20,9 +26,12 @@ from agent.reasoning.prompts import (
 from agent.runtime.logicrag_config import load_logicrag_runtime_config
 from agent.runtime.parallel import parallel_map_ordered
 from agent.domain.coverage_rules import expected_evidence_facets
+from agent.retrieve.claim_retrieval import build_claim_query_bundles, retrieve_claim_candidates
+from agent.retrieve.claims import build_claim_targets, claim_to_retrieval_target
 from agent.retrieve.coverage import assess_doc_coverage, retrieve_missing_doc_evidence
 from agent.retrieve.fusion import reciprocal_rank_fusion
 from agent.retrieve.option_retrieval import build_option_queries, retrieve_option_candidates
+from agent.retrieve.rerank import rerank_retrieval_results
 from agent.retrieve.retriever import Retriever
 from agent.retrieve.targets import analyze_evidence_sufficiency, build_retrieval_target
 from agent.schemas import AnswerResult, Question, RetrievalResult, TokenUsage
@@ -40,6 +49,20 @@ class Solver:
 
     def solve(self, question: Question) -> AnswerResult:
         """处理一道题并返回可提交答案与可审计证据。"""
+        if (
+            question.answer_format == "multi"
+            and self.llm.settings.retrieval_strategy == "logicrag_agent"
+            and self.llm.settings.logicrag_enabled
+            and self.runtime.a_board.claim_centric_multi_enabled
+        ):
+            return self._solve_claim_centric(question)
+        if (
+            question.answer_format == "mcq"
+            and self.llm.settings.retrieval_strategy == "logicrag_agent"
+            and self.llm.settings.logicrag_enabled
+            and self.runtime.a_board.claim_centric_mcq_enabled
+        ):
+            return self._solve_claim_centric(question)
         if (
             question.answer_format == "multi"
             and self.llm.settings.retrieval_strategy == "logicrag_agent"
@@ -100,13 +123,25 @@ class Solver:
         total_usage.add(plan_response.usage)
 
         rank_memories: list[dict] = []
-        rank_runs, combined = logicrag.retrieve_rankwise_evidence(
-            self.retriever,
-            question,
-            plan,
-            per_query_top_k=max(1, min(self.retriever.top_k_per_query, self.runtime.logicrag.rank_top_k)),
-            fused_top_k=self.runtime.logicrag.rank_top_k,
-        )
+        if self.runtime.logicrag.adaptive_retrieval_enabled:
+            rank_runs, combined, adaptive_usage = logicrag.retrieve_rankwise_evidence_adaptive(
+                self.retriever,
+                question,
+                plan,
+                self.llm,
+                self.runtime,
+                per_query_top_k=max(1, min(self.retriever.top_k_per_query, self.runtime.logicrag.rank_top_k)),
+                fused_top_k=self.runtime.logicrag.rank_top_k,
+            )
+            total_usage.add(adaptive_usage)
+        else:
+            rank_runs, combined = logicrag.retrieve_rankwise_evidence(
+                self.retriever,
+                question,
+                plan,
+                per_query_top_k=max(1, min(self.retriever.top_k_per_query, self.runtime.logicrag.rank_top_k)),
+                fused_top_k=self.runtime.logicrag.rank_top_k,
+            )
 
         for run in rank_runs:
             response = logicrag.summarize_rank_memory_with_qwen(
@@ -130,7 +165,7 @@ class Solver:
         final_compose_profile = self.llm.settings.thinking_profile_for_step("logicrag_final_compose")
         audit_evidence = self.compressor.compress(question, combined)
         audit_evidence, coverage_report = self._apply_a_board_coverage_gate(question, combined, audit_evidence)
-        compose_source = rank_runs[-1]["results"] if rank_runs else combined
+        compose_source = (rank_runs[-1].get("compose_results") or rank_runs[-1]["results"]) if rank_runs else combined
         compose_evidence = self.compressor.compress(question, compose_source)
         messages = build_logicrag_final_compose_messages(question, compose_evidence, plan, rank_memories)
         response = self.llm.chat(
@@ -166,10 +201,169 @@ class Solver:
                         "queries": list(run.get("queries", [])),
                         "sufficiency": dict(run.get("sufficiency", {})),
                         "evidence_doc_ids": list(dict.fromkeys(item.doc_id for item in run.get("results", []))),
+                        "adaptive_retrieval": dict(run.get("adaptive_retrieval", {})),
                     }
                     for run in rank_runs
                 ],
                 "final_compose_evidence_scope": "last_rank_only",
+                "coverage_report": coverage_report,
+                "domain_coverage_facets": expected_evidence_facets(question.domain, question.question) if coverage_report or self.runtime.a_board.coverage_gate_enabled else [],
+            },
+        )
+
+    def _solve_claim_centric(self, question: Question) -> AnswerResult:
+        total_usage = TokenUsage()
+        filter_doc_ids = self.retriever._candidate_doc_filter(question, not self.runtime.a_board.use_doc_ids_as_hint_only)
+        claims = build_claim_targets(question)
+        shared_query = self.retriever._question_with_options(question) if hasattr(self.retriever, "_question_with_options") else question.question
+        shared_candidates = self.retriever.index.search(
+            shared_query,
+            top_k=self.runtime.a_board.max_option_candidates,
+            filter_doc_ids=filter_doc_ids,
+            source="claim_shared",
+        )
+        claim_runs: dict[str, dict] = {}
+        verdicts: dict[str, dict] = {}
+        all_evidence: list[RetrievalResult] = []
+        seen_chunks: set[str] = set()
+        threshold = self.runtime.a_board.low_confidence_threshold
+        verdict_profile = self.llm.settings.thinking_profile_for_step("multi_logicrag_option_verdict")
+        retry_profile = self.llm.settings.thinking_profile_for_step("multi_logicrag_option_retry")
+
+        for claim in claims:
+            option_question = multi_logicrag.build_multi_option_question(question, claim.option_key, claim.option_text)
+            candidates, bundles = retrieve_claim_candidates(
+                self.retriever.index,
+                question,
+                claim,
+                filter_doc_ids=filter_doc_ids,
+                top_k_per_query=self.retriever.top_k_per_query,
+                fused_top_k=self.runtime.a_board.max_option_candidates,
+                shared_candidates=shared_candidates,
+            )
+            reranked = rerank_retrieval_results(question, claim_to_retrieval_target(claim), candidates, top_k=self.runtime.a_board.max_option_candidates)
+            evidence = self._option_compressor(question.domain).compress(option_question, reranked)
+            coverage = assess_doc_coverage(question.doc_ids, evidence).to_dict() if question.doc_ids else {}
+            sufficiency = analyze_claim_evidence_sufficiency(claim, [item.evidence_text for item in evidence])
+            verdict_evidence = evidence[: self.runtime.a_board.claim_verdict_max_evidence_items]
+            response = self.llm.chat(
+                build_option_evidence_judgement_messages(question, claim.option_key, claim.option_text, verdict_evidence),
+                temperature=0.0,
+                thinking_profile=verdict_profile,
+            )
+            total_usage.add(response.usage)
+            parsed = parse_option_verdict(response.text, claim.option_key)
+            verdict = {
+                "relation": _relation_from_option_verdict(parsed),
+                "confidence": float(parsed.confidence or 0.0),
+                "support_evidence": list(parsed.support_evidence),
+                "refute_evidence": list(parsed.refute_evidence),
+                "reason": parsed.reason,
+                "raw_response": parsed.raw_response,
+            }
+            retried = False
+            refinement = {"action": "", "reason": "", "queries": []}
+            retry_queries: list[str] = []
+            if self.runtime.a_board.multi_logicrag_retry_enabled and should_refine_claim(sufficiency, verdict, threshold=threshold):
+                retried = True
+                claim_refinement = build_claim_refinement(claim, sufficiency)
+                refinement = claim_refinement.to_dict()
+                retry_queries = list(claim_refinement.queries)[: self.runtime.a_board.max_claim_query_bundles]
+                ranked_lists = [
+                    self.retriever.index.search(
+                        query=query,
+                        top_k=self.retriever.top_k_per_query + max(2, self.runtime.a_board.max_verifier_candidates_per_option // 2),
+                        filter_doc_ids=filter_doc_ids,
+                        source=f"claim_retry_{claim.option_key}",
+                    )
+                    for query in retry_queries
+                ]
+                expanded = reciprocal_rank_fusion(ranked_lists, top_k=self.runtime.a_board.max_option_candidates + self.runtime.a_board.max_verifier_candidates_per_option) if ranked_lists else []
+                merged = multi_logicrag.merge_unique_evidence(reranked, expanded)
+                reranked = rerank_retrieval_results(question, claim_to_retrieval_target(claim), merged, top_k=self.runtime.a_board.max_option_candidates)
+                evidence = self._option_compressor(question.domain).compress(option_question, reranked)
+                coverage = assess_doc_coverage(question.doc_ids, evidence).to_dict() if question.doc_ids else {}
+                sufficiency = analyze_claim_evidence_sufficiency(claim, [item.evidence_text for item in evidence])
+                retry_verdict_evidence = evidence[: self.runtime.a_board.claim_retry_verdict_max_evidence_items]
+                retry_response = self.llm.chat(
+                    build_option_evidence_judgement_messages(question, claim.option_key, claim.option_text, retry_verdict_evidence),
+                    temperature=0.0,
+                    thinking_profile=retry_profile,
+                )
+                total_usage.add(retry_response.usage)
+                parsed = parse_option_verdict(retry_response.text, claim.option_key)
+                verdict = {
+                    "relation": _relation_from_option_verdict(parsed),
+                    "confidence": float(parsed.confidence or 0.0),
+                    "support_evidence": list(parsed.support_evidence),
+                    "refute_evidence": list(parsed.refute_evidence),
+                    "reason": parsed.reason,
+                    "raw_response": parsed.raw_response,
+                }
+
+            for item in evidence:
+                if item.chunk_id not in seen_chunks:
+                    all_evidence.append(item)
+                    seen_chunks.add(item.chunk_id)
+            verdicts[claim.option_key] = verdict
+            claim_runs[claim.option_key] = {
+                "claim_id": claim.claim_id,
+                "option_key": claim.option_key,
+                "claim_type": claim.claim_type,
+                "query_bundles": [bundle.to_dict() for bundle in bundles],
+                "evidence_doc_ids": list(dict.fromkeys(item.doc_id for item in evidence)),
+                "evidence_chunk_ids": [item.chunk_id for item in evidence],
+                "coverage": coverage,
+                "sufficiency": sufficiency,
+                "retried": retried,
+                "refinement": refinement,
+                "retry_queries": retry_queries,
+                "relation": verdict["relation"],
+                "confidence": verdict["confidence"],
+                "support_evidence": verdict["support_evidence"],
+                "refute_evidence": verdict["refute_evidence"],
+                "reason": verdict["reason"],
+            }
+
+        answer = assemble_claim_answer(verdicts, answer_format=question.answer_format)
+        confidence = _average_known_confidence(list(verdicts.values()))
+        final_evidence = _limit_evidence_with_doc_coverage(all_evidence, self.compressor.top_k, question.doc_ids)
+        final_evidence, coverage_report = self._apply_a_board_coverage_gate(question, all_evidence, final_evidence)
+        if not answer:
+            if question.answer_format == "multi":
+                answer = _fallback_multi_option([
+                    {"option": key, "verdict": None if value["relation"] == "insufficient" else value["relation"] == "support", "confidence": value["confidence"]}
+                    for key, value in verdicts.items()
+                ]) or "A"
+                confidence = 0.0
+            else:
+                answer = sorted(question.options)[0] if question.options else "A"
+                confidence = 0.0
+        return AnswerResult(
+            qid=question.qid,
+            answer=answer,
+            confidence=confidence,
+            evidence=final_evidence,
+            token_usage=total_usage,
+            raw_response="",
+            metadata={
+                "answer_format": question.answer_format,
+                "domain": question.domain,
+                "strategy": "claim_centric_multi" if question.answer_format == "multi" else "claim_centric_mcq",
+                "answer_assembly_policy": "multi_all_supported" if question.answer_format == "multi" else "single_strongest_supported",
+                "claim_runs": claim_runs,
+                "token_budget_policy": {
+                    "max_claim_query_bundles": self.runtime.a_board.max_claim_query_bundles,
+                    "max_claim_refinement_rounds": self.runtime.a_board.max_claim_refinement_rounds,
+                    "claim_final_compose_enabled": self.runtime.a_board.claim_final_compose_enabled,
+                    "claim_verdict_max_evidence_items": self.runtime.a_board.claim_verdict_max_evidence_items,
+                    "claim_retry_verdict_max_evidence_items": self.runtime.a_board.claim_retry_verdict_max_evidence_items,
+                },
+                "shared_retrieval": {
+                    "queries": [shared_query],
+                    "candidate_count": len(shared_candidates),
+                    "doc_ids": list(dict.fromkeys(item.doc_id for item in shared_candidates)),
+                },
                 "coverage_report": coverage_report,
                 "domain_coverage_facets": expected_evidence_facets(question.domain, question.question) if coverage_report or self.runtime.a_board.coverage_gate_enabled else [],
             },

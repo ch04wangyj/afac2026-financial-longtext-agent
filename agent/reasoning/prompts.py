@@ -243,13 +243,132 @@ rank={rank}
     ]
 
 
+def build_logicrag_query_bundle_messages(
+    question: Question,
+    rank: int,
+    nodes: list,
+    prior_memories: list[dict],
+    max_bundles: int,
+) -> list[dict[str, str]]:
+    """构造 LogicRAG rank 检索组合生成 Prompt。"""
+    role = DOMAIN_ROLES.get(question.domain, "你是金融长文本问答专家。")
+    node_text = "\n".join(f"- {getattr(node, 'node_id', '')}: {getattr(node, 'text', '')}" for node in nodes) or "- 无"
+    memory_text = "\n".join(f"rank={item.get('rank')}: {item.get('summary', '')}" for item in prior_memories) or "无"
+    options = "\n".join(f"{key}. {value}" for key, value in sorted(question.options.items())) or "无"
+    doc_scope = ", ".join(question.doc_ids) or "未限定"
+    user = f"""你负责为 LogicRAG 第 {rank} 层直接提出检索组合。系统只做去重、格式规范化和执行检索，不会再替你做额外关键词工程。
+
+原题: {question.question}
+题型: {question.answer_format}
+选项:
+{options}
+当前 doc scope: {doc_scope}
+当前层子问题:
+{node_text}
+上游记忆:
+{memory_text}
+
+请输出 3 到 5 组检索组合，但最多 {max_bundles} 组。每组 query 应指向不同证据方向，例如主事实、实体强化、数值/日期、对比端点、条款后果。
+
+只输出 JSON:
+{{
+  "query_bundles": [
+    {{"query": "...", "intent": "...", "evidence_type": "metric_value|date|clause_consequence|definition|entity_fact|comparison_endpoint|other", "must_terms": ["..."], "doc_scope_hint": ["..."]}}
+  ]
+}}
+
+规则:
+- 不要依赖外部知识，不要编造事实。
+- query 必须短而可检索，不要写成长推理。
+- 不要只改写原题；要改变证据方向。
+- 如果需要比较，至少覆盖比较双方或缺失端点。
+- 如果是条款题，优先查找后果、处罚、期限、义务等可裁决条款。
+"""
+    return [
+        {"role": "system", "content": f"{role} 你只负责生成可执行检索组合。"},
+        {"role": "user", "content": user},
+    ]
+
+
+def build_logicrag_sufficiency_messages(
+    question: Question,
+    rank: int,
+    nodes: list,
+    evidence: list[RetrievalResult],
+) -> list[dict[str, str]]:
+    """构造 LogicRAG rank 证据充分性轻量判断 Prompt。"""
+    role = DOMAIN_ROLES.get(question.domain, "你是金融长文本问答专家。")
+    node_text = "\n".join(f"- {getattr(node, 'node_id', '')}: {getattr(node, 'text', '')}" for node in nodes) or "- 无"
+    user = f"""你负责判断当前检索证据是否足够回答 LogicRAG 第 {rank} 层子问题。
+
+原题: {question.question}
+当前层子问题:
+{node_text}
+
+证据:
+{format_evidence(evidence)}
+
+只输出 JSON:
+{{"sufficient": 0或1, "failure_tags": ["missing_metric_value_pair|missing_second_endpoint|same_doc_wrong_clause|missing_clause_consequence|generic_context_only|other"], "reason": "一句话", "missing_evidence": "缺什么证据", "next_search_goal": "下一轮应该搜什么"}}
+
+规则:
+- sufficient=1 表示证据足够支撑当前层进入记忆/最终组合。
+- sufficient=0 表示信息不足；必须说明缺失证据类型和下一轮检索方向。
+- 不要使用外部知识，不要替最终答案做无证据猜测。
+"""
+    return [
+        {"role": "system", "content": f"{role} 你只做证据充分性判断，不做最终答题。"},
+        {"role": "user", "content": user},
+    ]
+
+
+def build_logicrag_refinement_messages(
+    question: Question,
+    rank: int,
+    nodes: list,
+    evidence: list[RetrievalResult],
+    judgement,
+    prior_queries: list[str],
+    max_bundles: int,
+) -> list[dict[str, str]]:
+    """构造 LogicRAG 检索方向重写 Prompt。"""
+    role = DOMAIN_ROLES.get(question.domain, "你是金融长文本问答专家。")
+    node_text = "\n".join(f"- {getattr(node, 'node_id', '')}: {getattr(node, 'text', '')}" for node in nodes) or "- 无"
+    prior_query_text = "\n".join(f"- {query}" for query in prior_queries) or "- 无"
+    reason = getattr(judgement, "reason", "") if not isinstance(judgement, dict) else judgement.get("reason", "")
+    missing = getattr(judgement, "missing_evidence", "") if not isinstance(judgement, dict) else judgement.get("missing_evidence", "")
+    next_goal = getattr(judgement, "next_search_goal", "") if not isinstance(judgement, dict) else judgement.get("next_search_goal", "")
+    user = f"""上一轮 LogicRAG 第 {rank} 层检索证据不足。请重新思考下一轮检索方向，而不是只给上一轮 query 增加同义词。
+
+原题: {question.question}
+当前层子问题:
+{node_text}
+上一轮 query:
+{prior_query_text}
+不足原因: {reason}
+缺失证据: {missing}
+建议目标: {next_goal}
+
+上一轮证据:
+{format_evidence(evidence)}
+
+请围绕缺失证据类型重定向，输出 3 到 5 组新的检索组合，最多 {max_bundles} 组。
+只输出 JSON，格式同 query_bundles:
+{{"query_bundles": [{{"query": "...", "intent": "...", "evidence_type": "...", "must_terms": ["..."], "doc_scope_hint": ["..."]}}]}}
+"""
+    return [
+        {"role": "system", "content": f"{role} 你负责低可信检索方向重写，不得编造证据。"},
+        {"role": "user", "content": user},
+    ]
+
+
 def build_logicrag_final_compose_messages(
     question: Question,
     evidence: list[RetrievalResult],
     logic_plan,
     rank_memories: list[dict],
 ) -> list[dict[str, str]]:
-    """构造 LogicRAG 最终作答 Prompt。"""
+
     role = DOMAIN_ROLES.get(question.domain, "你是金融长文本问答专家。")
     options = "\n".join(f"{key}. {value}" for key, value in sorted(question.options.items())) or "无"
     plan_text = "\n".join(

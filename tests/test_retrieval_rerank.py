@@ -115,3 +115,26 @@ def test_rerank_prefers_metric_block_over_audit_report_for_financial_comparison(
     ranked = rerank_retrieval_results(question, target, [audit, metric])
 
     assert ranked[0].chunk_id == "m1"
+
+
+
+def test_rerank_accepts_claim_target_bridge_for_clause_claim():
+    from agent.retrieve.claims import build_claim_targets, claim_to_retrieval_target
+
+    question = Question(
+        qid="q_claim_clause",
+        domain="regulatory",
+        split="A",
+        question="证券公司被行政处罚是否会扣减分类评价得分？",
+        options={"A": "会扣减分类评价得分"},
+        answer_format="mcq",
+        doc_ids=["doc1"],
+    )
+    claim = build_claim_targets(question)[0]
+    target = claim_to_retrieval_target(claim)
+    generic = _result("g", "证券公司分类评价坚持依法合规、客观公正的原则。", 1.2)
+    specific = _result("s", "证券公司因重大违法违规被实施行政处罚的，应当扣减分类评价得分。", 1.0)
+
+    ranked = rerank_retrieval_results(question, target, [generic, specific])
+
+    assert ranked[0].chunk_id == "s"

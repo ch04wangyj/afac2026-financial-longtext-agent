@@ -4,7 +4,18 @@ from __future__ import annotations
 
 from agent.llm.qwen_client import LLMResponse, QwenClient
 from agent.reasoning.answer_parser import extract_json_object
-from agent.reasoning.prompts import build_logicrag_memory_summary_messages, build_logicrag_plan_messages
+from agent.reasoning.prompts import (
+    build_logicrag_memory_summary_messages,
+    build_logicrag_plan_messages,
+    build_logicrag_query_bundle_messages,
+    build_logicrag_refinement_messages,
+    build_logicrag_sufficiency_messages,
+)
+from agent.reasoning.retrieval_refiner import (
+    LogicRAGSufficiencyJudgement,
+    parse_logicrag_query_bundles,
+    parse_logicrag_sufficiency_judgement,
+)
 from agent.retrieve.context import build_evidence_packs, select_results_from_packs
 from agent.retrieve.expansion import build_short_hypothetical_query, build_sparse_feedback_query
 from agent.retrieve.fusion import reciprocal_rank_fusion
@@ -361,6 +372,233 @@ def retrieve_rankwise_evidence(
                 combined.append(item)
                 seen_chunks.add(item.chunk_id)
     return rank_runs, combined
+
+
+def generate_rank_query_bundles_with_qwen(
+    question: Question,
+    llm: QwenClient,
+    group: dict,
+    prior_memories: list[dict],
+    max_bundles: int,
+) -> tuple[list[str], list, LLMResponse]:
+    messages = build_logicrag_query_bundle_messages(
+        question,
+        rank=group["rank"],
+        nodes=group.get("nodes", []),
+        prior_memories=prior_memories,
+        max_bundles=max_bundles,
+    )
+    response = llm.chat(
+        messages,
+        temperature=0.0,
+        thinking_profile=llm.settings.thinking_profile_for_step("logicrag_query_bundle"),
+    )
+    bundles = parse_logicrag_query_bundles(response.text, max_bundles=max_bundles)
+    queries = [bundle.query for bundle in bundles]
+    if not queries:
+        queries = build_rankwise_queries_for_group(question, group, prior_memories=prior_memories)
+    return _dedupe_queries(queries), bundles, response
+
+
+def judge_rank_evidence_sufficiency_with_qwen(
+    question: Question,
+    llm: QwenClient,
+    group: dict,
+    evidence: list,
+) -> tuple[LogicRAGSufficiencyJudgement, LLMResponse]:
+    messages = build_logicrag_sufficiency_messages(
+        question,
+        rank=group["rank"],
+        nodes=group.get("nodes", []),
+        evidence=evidence,
+    )
+    response = llm.chat(
+        messages,
+        temperature=0.0,
+        thinking_profile=llm.settings.thinking_profile_for_step("logicrag_sufficiency_gate"),
+    )
+    return parse_logicrag_sufficiency_judgement(response.text), response
+
+
+def refine_rank_query_bundles_with_qwen(
+    question: Question,
+    llm: QwenClient,
+    group: dict,
+    evidence: list,
+    judgement: LogicRAGSufficiencyJudgement,
+    prior_queries: list[str],
+    max_bundles: int,
+) -> tuple[list[str], list, LLMResponse]:
+    messages = build_logicrag_refinement_messages(
+        question,
+        rank=group["rank"],
+        nodes=group.get("nodes", []),
+        evidence=evidence,
+        judgement=judgement,
+        prior_queries=prior_queries,
+        max_bundles=max_bundles,
+    )
+    response = llm.chat(
+        messages,
+        temperature=0.0,
+        thinking_profile=llm.settings.thinking_profile_for_step("logicrag_refinement"),
+    )
+    bundles = parse_logicrag_query_bundles(response.text, max_bundles=max_bundles)
+    return _dedupe_queries([bundle.query for bundle in bundles]), bundles, response
+
+
+def retrieve_rankwise_evidence_adaptive(
+    retriever,
+    question: Question,
+    plan: LogicPlan,
+    llm: QwenClient,
+    runtime,
+    per_query_top_k: int,
+    fused_top_k: int,
+) -> tuple[list[dict], list, object]:
+    from agent.schemas import TokenUsage
+
+    total_usage = TokenUsage()
+    base_filter_doc_ids, scope_policy = _initial_logicrag_filter_doc_ids(retriever, question, runtime)
+    rank_runs: list[dict] = []
+    combined = []
+    seen_chunks: set[str] = set()
+    prior_memories: list[dict] = []
+    for group in build_rankwise_query_groups(question, plan):
+        rank_results: list = []
+        compose_results: list = []
+        rounds: list[dict] = []
+        current_filter_doc_ids = base_filter_doc_ids
+        queries, bundles, response = generate_rank_query_bundles_with_qwen(
+            question,
+            llm,
+            group,
+            prior_memories=prior_memories,
+            max_bundles=runtime.logicrag.max_query_bundles_per_rank,
+        ) if runtime.logicrag.llm_query_bundles_enabled else (
+            build_rankwise_queries_for_group(question, group, prior_memories=prior_memories),
+            [],
+            None,
+        )
+        if response is not None:
+            total_usage.add(response.usage)
+        exhausted = False
+        final_sufficiency = {}
+        max_rounds = max(0, int(runtime.logicrag.max_refinement_rounds_per_rank)) + 1
+        for round_index in range(max_rounds):
+            ranked_lists = [
+                retriever.index.search(
+                    query=query,
+                    top_k=per_query_top_k,
+                    filter_doc_ids=current_filter_doc_ids,
+                    source=f"logicrag_agent_rank_{group['rank']}_round_{round_index}",
+                )
+                for query in queries
+            ]
+            fused = reciprocal_rank_fusion(ranked_lists, top_k=fused_top_k)
+            reranked = rerank_retrieval_results(question, group["target"], fused, top_k=fused_top_k)
+            final_results, packs = _select_logicrag_results(retriever, question, reranked, fused_top_k)
+            compose_results = final_results
+            for item in final_results:
+                if item.chunk_id not in {x.chunk_id for x in rank_results}:
+                    rank_results.append(item)
+            judgement, suff_response = judge_rank_evidence_sufficiency_with_qwen(question, llm, group, final_results)
+            total_usage.add(suff_response.usage)
+            final_sufficiency = judgement.to_dict()
+            rounds.append(
+                {
+                    "round": round_index,
+                    "queries": list(queries),
+                    "query_bundles": [bundle.to_dict() for bundle in bundles],
+                    "filter_doc_ids": sorted(current_filter_doc_ids) if current_filter_doc_ids else None,
+                    "evidence_doc_ids": list(dict.fromkeys(item.doc_id for item in final_results)),
+                    "sufficiency": judgement.to_dict(),
+                }
+            )
+            if judgement.sufficient:
+                break
+            if round_index >= max_rounds - 1:
+                exhausted = True
+                break
+            if current_filter_doc_ids is None and runtime.logicrag.b_board_scope_narrowing_enabled:
+                current_filter_doc_ids = _narrow_filter_doc_ids_from_results(final_results, runtime.logicrag.narrowed_doc_top_n)
+            queries, bundles, refine_response = refine_rank_query_bundles_with_qwen(
+                question,
+                llm,
+                group,
+                final_results,
+                judgement,
+                prior_queries=queries,
+                max_bundles=runtime.logicrag.max_query_bundles_per_rank,
+            )
+            total_usage.add(refine_response.usage)
+            if not queries:
+                exhausted = True
+                break
+        sufficiency = final_sufficiency or analyze_evidence_sufficiency(group["target"], [item.evidence_text for item in rank_results])
+        rank_runs.append(
+            {
+                **group,
+                "queries": list(dict.fromkeys(query for row in rounds for query in row.get("queries", []))),
+                "seed_results": [],
+                "results": rank_results,
+                "compose_results": compose_results or rank_results,
+                "packs": [],
+                "sufficiency": sufficiency,
+                "adaptive_retrieval": {
+                    "enabled": True,
+                    "scope_policy": scope_policy,
+                    "rounds": rounds,
+                    "exhausted": exhausted,
+                },
+            }
+        )
+        prior_memories.append({"rank": group["rank"], "summary": _build_rank_memory_summary(group, compose_results or rank_results)})
+        for item in rank_results:
+            if item.chunk_id not in seen_chunks:
+                combined.append(item)
+                seen_chunks.add(item.chunk_id)
+    return rank_runs, combined, total_usage
+
+
+def _select_logicrag_results(retriever, question: Question, reranked: list, fused_top_k: int) -> tuple[list, list]:
+    if hasattr(retriever.index, "get_chunk") and hasattr(retriever.index, "result_from_chunk"):
+        packs = build_evidence_packs(
+            retriever.index,
+            question,
+            reranked,
+            max_packs=min(4, max(2, fused_top_k)),
+            neighbor_window=1,
+            max_chunks_per_pack=4,
+            max_chars_per_pack=2200,
+        )
+        selected_results = select_results_from_packs(
+            retriever.index,
+            question,
+            packs,
+            top_k=fused_top_k,
+            max_chars=6000,
+        )
+    else:
+        packs = []
+        selected_results = []
+    return selected_results or reranked[:fused_top_k], packs
+
+
+def _initial_logicrag_filter_doc_ids(retriever, question: Question, runtime) -> tuple[set[str] | None, str]:
+    if question.doc_ids and not runtime.a_board.use_doc_ids_as_hint_only:
+        return set(question.doc_ids), "strict_doc_ids"
+    if question.doc_ids and hasattr(retriever, "_candidate_doc_filter"):
+        return retriever._candidate_doc_filter(question, False), "doc_ids_as_hint"
+    return None, "global_then_narrow"
+
+
+def _narrow_filter_doc_ids_from_results(results: list, top_n: int) -> set[str] | None:
+    scores: dict[str, float] = {}
+    for rank, item in enumerate(results):
+        scores[item.doc_id] = scores.get(item.doc_id, 0.0) + max(0.0, float(item.score)) + 1.0 / (rank + 1)
+    ranked = sorted(scores, key=scores.get, reverse=True)[: max(1, top_n)]
+    return set(ranked) if ranked else None
 
 
 

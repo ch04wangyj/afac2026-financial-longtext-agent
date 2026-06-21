@@ -2,6 +2,8 @@ from agent.reasoning.prompts import (
     build_answer_messages,
     build_logicrag_final_compose_messages,
     build_logicrag_plan_messages,
+    build_logicrag_query_bundle_messages,
+    build_logicrag_sufficiency_messages,
 )
 from agent.schemas import LogicNode, LogicPlan, Question, RetrievalResult
 
@@ -72,3 +74,28 @@ def test_logicrag_final_compose_prompt_stays_summary_first_and_rejects_token_hea
     assert "不要为了补偿上游检索缺口而扩写背景或常识推理" in text
     assert "若分层记忆与最终证据仍不足，只能降低 confidence" in text
     assert "分层记忆优先于最终层原文堆砌" in text
+
+
+def test_logicrag_query_bundle_prompt_demands_direct_multi_direction_queries():
+    messages = build_logicrag_query_bundle_messages(
+        _question(),
+        rank=0,
+        nodes=[LogicNode("n1", "查找营业收入")],
+        prior_memories=[],
+        max_bundles=4,
+    )
+    text = messages[-1]["content"]
+
+    assert "query_bundles" in text
+    assert "3 到 5" in text
+    assert "系统只做去重" in text
+    assert "不要依赖外部知识" in text
+
+
+def test_logicrag_sufficiency_prompt_returns_zero_one_and_next_goal():
+    messages = build_logicrag_sufficiency_messages(_question(), rank=0, nodes=[], evidence=[])
+    text = messages[-1]["content"]
+
+    assert '"sufficient": 0或1' in text
+    assert "failure_tags" in text
+    assert "next_search_goal" in text
