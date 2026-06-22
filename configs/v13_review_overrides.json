@@ -1,0 +1,72 @@
+{
+  "fc_a_004": {
+    "answer": "A",
+    "decision": "fallback_v12_after_exact_check",
+    "reason": "第一份文档本期发行上限明确为10亿元；第二份文档资产负债率含66.38%，不满足63%至66%的严格区间。"
+  },
+  "fc_a_009": {
+    "answer": "ABD",
+    "decision": "fallback_v12_after_exact_check",
+    "reason": "text02明确披露主体评级AA+；本期发行规模为5亿元而非10亿元；B、D有原文支持。"
+  },
+  "fin_a_002": {
+    "answer": "ABD",
+    "decision": "fallback_v12_after_exact_check",
+    "reason": "2025年拟派现金分红315.32亿元，高于2024年方案253.72亿元；经营现金流同比增加，A、B、D成立。"
+  },
+  "ins_a_007": {
+    "answer": "BC",
+    "decision": "accept_v13_direct_clause",
+    "reason": "国寿增益宝贷款上限为扣除欠款后现金价值的80%；个人养老金方式投保富鸿金生不接受贷款。"
+  },
+  "ins_a_010": {
+    "answer": "AB",
+    "decision": "fallback_v12_after_exact_check",
+    "reason": "文档1按保单年度给出现金价值比例和计算方法，文档2明确给出个人账户价值减退保费用公式。"
+  },
+  "ins_a_017": {
+    "answer": "ABCD",
+    "decision": "accept_v13_direct_clause",
+    "reason": "四项事故分别命中对应产品的身故、白血病医疗、营运交通意外伤残和火灾财产责任。"
+  },
+  "reg_a_001": {
+    "answer": "CD",
+    "decision": "accept_v13_direct_rule",
+    "reason": "30个工作日记录要求对应非重大差异；较高风险存量客户为6个月，且尽调办法施行更早。"
+  },
+  "reg_a_002": {
+    "answer": "ABC",
+    "decision": "fallback_v12_after_exact_check",
+    "reason": "反洗钱法明确业务关系结束后至少保存十年；重大备案差异30个工作日报告；保密义务成立。"
+  },
+  "reg_a_003": {
+    "answer": "B",
+    "decision": "accept_v13_direct_rule",
+    "reason": "原文限制的是向其他数据处理者导出高敏感数据，并未原则禁止在终端设备存储。"
+  },
+  "reg_a_005": {
+    "answer": "AC",
+    "decision": "accept_v13_direct_rule",
+    "reason": "同机构高管调任后10日报告及收费调整前30个自然日公示均有原文；B、D不成立。"
+  },
+  "res_a_001": {
+    "answer": "ABC",
+    "decision": "fallback_v12_after_cross_question_check",
+    "reason": "韩国2022年银保占比56%，台湾地区2005至2018年银保复合增速9.9%，金融信创规模表述成立。"
+  },
+  "res_a_005": {
+    "answer": "ABC",
+    "decision": "manual_cross_document_correction",
+    "reason": "服务零售累计同比领先、韩国银保超过50%、2022年居民收入增速降至5%均有原文直接支持。"
+  },
+  "res_a_009": {
+    "answer": "ABC",
+    "decision": "fallback_v12_after_cross_question_check",
+    "reason": "韩国银保超过50%，超过1000条内置规则及欧盟历史份额增长成立；3384条规则用于自动解析。"
+  },
+  "res_a_014": {
+    "answer": "ABC",
+    "decision": "fallback_v12_after_exact_check",
+    "reason": "原文明确服务零售持续领先1.7个百分点、客户类型和2022年收入增速；4930亿美元而非欧元。"
+  }
+}

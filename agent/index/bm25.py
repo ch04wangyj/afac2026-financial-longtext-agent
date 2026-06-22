@@ -98,8 +98,12 @@ class BM25SearchIndex:
         chunks: list[Chunk],
         corpus_tokens: list[list[str]] | None = None,
         tokenizer_mode: str = "mixed",
+        parent_chunks: list[Chunk] | None = None,
     ) -> None:
         self.chunks = chunks
+        # V13 只对子块建倒排索引；父块单独保存，避免粗细粒度文本互相争抢 Top-K。
+        self.parent_chunks = list(parent_chunks or [])
+        self.parent_chunk_by_id: dict[str, Chunk] = {chunk.chunk_id: chunk for chunk in self.parent_chunks}
         self.tokenizer_mode = tokenizer_mode
         self.default_search_mode = "bm25"
         self.corpus_tokens = corpus_tokens or [tokenize_chunk(chunk, mode=tokenizer_mode) for chunk in chunks]
@@ -134,20 +138,32 @@ class BM25SearchIndex:
                     self.section_to_chunk_ids[(doc_id, section_key)].append(chunk.chunk_id)
 
     @classmethod
-    def build(cls, chunks: list[Chunk], tokenizer_mode: str = "mixed") -> "BM25SearchIndex":
-        return cls(chunks, tokenizer_mode=tokenizer_mode)
+    def build(
+        cls,
+        chunks: list[Chunk],
+        tokenizer_mode: str = "mixed",
+        parent_chunks: list[Chunk] | None = None,
+    ) -> "BM25SearchIndex":
+        return cls(chunks, tokenizer_mode=tokenizer_mode, parent_chunks=parent_chunks)
 
     def search(
         self,
         query: str,
         top_k: int = 20,
         filter_doc_ids: set[str] | None = None,
+        filter_chunk_types: set[str] | None = None,
         source: str = "bm25",
         scoring_mode: str | None = None,
     ) -> list[RetrievalResult]:
         scoring_mode = scoring_mode or self.default_search_mode
         if scoring_mode == "bm25f_lite":
-            return self._field_aware_search(query, top_k=top_k, filter_doc_ids=filter_doc_ids, source=source)
+            return self._field_aware_search(
+                query,
+                top_k=top_k,
+                filter_doc_ids=filter_doc_ids,
+                filter_chunk_types=filter_chunk_types,
+                source=source,
+            )
 
         query_tokens = tokenize(query, mode=self.tokenizer_mode)
         ranked = sorted(self.engine.get_score_items(query_tokens), key=lambda item: item[1], reverse=True)
@@ -157,6 +173,8 @@ class BM25SearchIndex:
                 break
             chunk = self.chunks[idx]
             if filter_doc_ids and chunk.doc_id not in filter_doc_ids:
+                continue
+            if filter_chunk_types and str(chunk.metadata.get("chunk_type", "text")) not in filter_chunk_types:
                 continue
             results.append(self.result_from_chunk(chunk, score=float(score), source=source, query=query))
             if len(results) >= top_k:
@@ -168,6 +186,7 @@ class BM25SearchIndex:
         query: str,
         top_k: int,
         filter_doc_ids: set[str] | None,
+        filter_chunk_types: set[str] | None,
         source: str,
     ) -> list[RetrievalResult]:
         query_tokens = tokenize(query, mode=self.tokenizer_mode)
@@ -180,7 +199,11 @@ class BM25SearchIndex:
         if not component_scores:
             return []
 
-        candidate_scores = self._filter_component_scores(component_scores, filter_doc_ids)
+        candidate_scores = self._filter_component_scores(
+            component_scores,
+            filter_doc_ids,
+            filter_chunk_types,
+        )
         if not candidate_scores:
             return []
 
@@ -248,13 +271,18 @@ class BM25SearchIndex:
         self,
         component_scores: dict[int, dict[str, float]],
         filter_doc_ids: set[str] | None,
+        filter_chunk_types: set[str] | None = None,
     ) -> dict[int, dict[str, float]]:
-        if not filter_doc_ids:
+        if not filter_doc_ids and not filter_chunk_types:
             return component_scores
         return {
             idx: parts
             for idx, parts in component_scores.items()
-            if self.chunks[idx].doc_id in filter_doc_ids
+            if (not filter_doc_ids or self.chunks[idx].doc_id in filter_doc_ids)
+            and (
+                not filter_chunk_types
+                or str(self.chunks[idx].metadata.get("chunk_type", "text")) in filter_chunk_types
+            )
         }
 
     def _normalize_component_scores(self, component_scores: dict[int, dict[str, float]]) -> dict[int, dict[str, float]]:
@@ -316,6 +344,12 @@ class BM25SearchIndex:
     def get_chunk(self, chunk_id: str) -> Chunk | None:
         return self.chunk_by_id.get(chunk_id)
 
+    def get_parent_chunk(self, chunk_id: str) -> Chunk | None:
+        """按子块 metadata.parent_chunk_id 读取未参与检索的父块。"""
+        chunk = self.get_chunk(chunk_id)
+        parent_id = str(chunk.metadata.get("parent_chunk_id", "")) if chunk else str(chunk_id)
+        return self.parent_chunk_by_id.get(parent_id)
+
     def get_doc_neighbors(
         self,
         chunk_id: str,
@@ -366,6 +400,7 @@ class BM25SearchIndex:
                     "chunks": self.chunks,
                     "corpus_tokens": self.corpus_tokens,
                     "tokenizer_mode": self.tokenizer_mode,
+                    "parent_chunks": self.parent_chunks,
                 },
                 f,
             )
@@ -378,6 +413,7 @@ class BM25SearchIndex:
             payload["chunks"],
             payload["corpus_tokens"],
             tokenizer_mode=payload.get("tokenizer_mode", "mixed"),
+            parent_chunks=payload.get("parent_chunks", []),
         )
 
     @staticmethod

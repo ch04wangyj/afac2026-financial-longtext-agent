@@ -1,22 +1,22 @@
 # AFAC2026 赛题四金融长文本 Agent
 
-面向 AFAC2026 赛题四的金融长文本答题仓库。当前代码为 **V12 candidate**：在 V11 sparse retrieval 主线之外新增文档级高召回验证器，按选项和 `doc_id` 独立召回、精确扫描文档、展开相邻上下文，再由 Qwen3.7-Max 统一裁决并按需执行反证审计。
+面向 AFAC2026 赛题四的金融长文本答题仓库。当前代码为 **V13 candidate**：使用原子子块检索、父块按需恢复、谓词真实值查询、支持/反证平衡精排和保守结果融合，继续满足 Qwen-only、无 embedding 的赛题约束。
 
 | 状态 | 当前值 |
 |---|---|
 | 官方最佳版本 | V11 financial row index + answer dev gate |
 | 官方最佳得分 | **58.1679** |
 | V11 反推准确率 | **62 / 100**（按官方公式与 `1,030,141` Token 反推） |
-| 当前候选版本 | V12 exhaustive document verifier + adversarial audit |
-| V12 官方得分 | 待提交验证，不以本地结果代替榜单成绩 |
-| 当前可提交 A100 | 100 题，`total_tokens=2,292,333` |
+| V12 官方结果 | **57.7848**，反推准确率 **67 / 100**，Token `2,292,333` |
+| 当前候选版本 | V13 atomic predicate verifier + conservative reconciliation |
+| 当前可提交 A100 | 100 题，`total_tokens=377,650` |
 
 ## 当前版本提供什么
 
 ### 正式默认主线
-- `doc_first_bm25f_expansion`
-- 特征：词法检索、文档级 shortlist、chunk 级 sparse 检索、doc-first local expansion / aggregation、无 embedding
-- 适用：当前默认提交 / smoke / sample / A100 正式运行
+- `v13_precise_verifier`
+- 特征：200–520 字原子子块、独立父块仓库、BM25F、谓词真实值查询、逐文档支持/反证选择、无 embedding
+- 适用：当前 A100 正式运行与提交；`doc_first_bm25f_expansion` 保留为历史稳定基线
 
 ### 保留的 LogicRAG 实验线
 - `logicrag_qwen_rrf`
@@ -129,6 +129,10 @@ LogicRAG / thinking / 并发预算配置集中在：
 - `scripts/12_refresh_extra_index_fields_from_existing_index.py`：基于现有索引重写 `chunks.jsonl` 的 `extra_index_fields`
 - `scripts/13_augment_financial_metric_rows.py`：从现有财报 text chunks 生成指标行，无需重新解析 PDF
 - `scripts/14_run_exhaustive_verifier.py`：运行 V12 文档级高召回裁决与可选反证审计
+- `scripts/15_build_hierarchical_index.py`：构建 V13 原子子块、父块仓库和层级 BM25F 索引
+- `scripts/16_run_precise_verifier.py`：运行 V13 谓词真实值与支持/反证精确验证器
+- `scripts/17_reconcile_results.py`：弱证据回退 V12，强变化执行独立 Qwen 审计
+- `scripts/18_apply_review_overrides.py`：应用逐条原文复核结论且保持真实 Token 统计
 
 ---
 
@@ -242,7 +246,7 @@ python scripts\04_make_submission.py `
 
 `reg_a_014` 的 V11 回归答案与底稿同为 `ABD`，因此提交候选保留 Token 更低的底稿记录。`outputs/` 按仓库规则不提交 Git，正式 CSV 由上述命令本地复现。
 
-### 当前可提交 V12 candidate
+### V12 历史提交
 
 V12 不再让 BM25 Top-K 决定最终证据边界。每个选项都对题目给定的每份文档单独检索，并增加非年份数值/完整日期/实体精确扫描、同页和相邻块展开。首轮统一裁决后，只对与 V11 不一致的题执行反证审计。
 
@@ -279,10 +283,52 @@ python scripts\04_make_submission.py `
 | 相对 V11 答案变化 | 38 |
 | 开发集 exact-match | 3 / 3 |
 | `summary.total_tokens` | 2,292,333 |
-| 超过 V11 所需最低准确率 | 68 / 100 |
+| 官网得分 | 57.7848 |
+| 反推准确率 | 67 / 100 |
 | 文件编码 | UTF-8 with BOM |
 
-V12 研究与实现说明见 `theory/references/notes/2026-06-22_v12-exhaustive-document-verifier.md`。当前审计版优先验证准确率上限；若官网得分确认方向有效，下一版将只审计高冲突题并复用首轮证据，从而回收 TokenScore。
+V12 相对 V11 多答对 5 题，但额外约 126 万 Token 抵消了准确率收益。研究与实现说明见 `theory/references/notes/2026-06-22_v12-exhaustive-document-verifier.md`。
+
+### 当前可提交 V13 candidate
+
+V13 不再扩大 Top-K，而是先把旧页级块重建为原子子块。检索查询分成“候选值支持”和“不携带候选值的谓词真实值”，错误选项不会再仅凭虚假数值牵引检索。弱证据变化回退 V12，只有可复核变化才进入最终答案。
+
+```powershell
+python scripts\15_build_hierarchical_index.py
+
+python scripts\16_run_precise_verifier.py `
+  --output-dir outputs\v13_full_no_thinking `
+  --workers 8 `
+  --no-thinking
+
+python scripts\17_reconcile_results.py `
+  --results outputs\v13_full_no_thinking\answer_results.jsonl `
+  --baseline outputs\submissions\v12_exhaustive_audit_20260622\answer_results.jsonl `
+  --output outputs\v13_reconciled_thinking\answer_results.jsonl `
+  --workers 6 `
+  --thinking
+
+python scripts\18_apply_review_overrides.py `
+  --results outputs\v13_reconciled_thinking\answer_results.jsonl `
+  --output outputs\v13_final_reviewed\answer_results.jsonl
+
+python scripts\04_make_submission.py `
+  --results outputs\v13_final_reviewed\answer_results.jsonl `
+  --output-dir outputs\submissions\v13_precise_reviewed_20260622 `
+  --require-complete
+```
+
+| 校验项 | 结果 |
+|---|---:|
+| 题目覆盖 | 100 / 100 |
+| 相对 V12 最终变化 | 6 |
+| 开发集 exact-match | 3 / 3 |
+| `summary.total_tokens` | 377,650 |
+| 维持 67% 准确率时理论得分 | 65.4818 |
+| 超过 V12 所需最低准确率 | 59.13 / 100 |
+| 文件编码 | UTF-8 with BOM |
+
+提交文件：`outputs/submissions/v13_precise_reviewed_20260622/answer.csv`。V13 说明见 `theory/references/notes/2026-06-22_v13-atomic-predicate-verifier.md`。
 
 ---
 

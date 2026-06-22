@@ -16,7 +16,8 @@ from agent.schemas import Question
 LAW_RE = re.compile(r"《[^》]{2,80}》")
 YEAR_RE = re.compile(r"20\d{2}\s*年")
 ENTITY_RE = re.compile(
-    r"[\u4e00-\u9fffA-Za-z0-9]{2,30}(?:公司|集团|银行|保险|证券|基金|债券|报告|办法|条例|规定|细则|通知|指引|准则|产品)"
+    r"[\u4e00-\u9fffA-Za-z0-9（）()]{2,48}(?:股份有限公司|集团有限公司|有限公司|"
+    r"公司|集团|银行|保险|证券|基金|债券|报告|办法|条例|规定|细则|通知|指引|准则|产品)"
 )
 METRIC_RE = re.compile(
     r"(?:营业收入|净利润|现金流量净额|研发投入|分红|票面利率|发行规模|评级|担保|身故保险金|现金价值|保险责任|退保|客户尽职调查|受益所有人|等待期|股份回购)"
@@ -24,7 +25,7 @@ METRIC_RE = re.compile(
 PRODUCT_RE = re.compile(
     r"[\u4e00-\u9fffA-Za-z0-9]{2,30}(?:e生保|医疗险|重疾险|家财险|意外险|年金保险|养老保险|募集说明书)"
 )
-SHORT_TOKEN_RE = re.compile(r"[\u4e00-\u9fff]{2,8}")
+SHORT_PHRASE_RE = re.compile(r"(?<![\u4e00-\u9fff])[\u4e00-\u9fff]{2,12}(?![\u4e00-\u9fff])")
 SHORT_TOKEN_STOPWORDS = {
     "根据",
     "提供",
@@ -50,8 +51,9 @@ SHORT_TOKEN_STOPWORDS = {
 def extract_query_entities(text: str) -> list[str]:
     """从题干/选项中抽取法规名、年份、金融实体、指标、数字和日期。"""
     entities: list[str] = []
-    for pattern in (LAW_RE, ENTITY_RE, METRIC_RE, YEAR_RE, PRODUCT_RE):
+    for pattern in (LAW_RE, METRIC_RE, YEAR_RE, PRODUCT_RE):
         entities.extend(match.group(0).strip() for match in pattern.finditer(text))
+    entities.extend(_trim_entity_candidate(match.group(0)) for match in ENTITY_RE.finditer(text))
     entities.extend(_extract_short_tokens(text))
     entities.extend(extract_numbers(text))
     entities.extend(extract_dates(text))
@@ -104,8 +106,10 @@ def _full_question_text(question: Question) -> str:
 
 
 def _extract_short_tokens(text: str) -> list[str]:
+    """只保留有明确边界的短语，禁止把长句机械切成连续 8 字片段。"""
     output: list[str] = []
-    for match in SHORT_TOKEN_RE.finditer(text):
+    normalized = re.sub(r"[，。；：、？！,.!?;:（）()\[\]【】]", " ", text)
+    for match in SHORT_PHRASE_RE.finditer(normalized):
         token = match.group(0).strip()
         if token in SHORT_TOKEN_STOPWORDS:
             continue
@@ -113,6 +117,18 @@ def _extract_short_tokens(text: str) -> list[str]:
             continue
         output.append(token)
     return output
+
+
+def _trim_entity_candidate(value: str) -> str:
+    """去掉“名称为/指定”等选项模板前缀，保留真正的机构或规则名称。"""
+    value = value.strip()
+    for marker in ("名称为", "发行人为", "发行人是", "指定", "明确", "由", "为"):
+        if marker in value:
+            suffix = value.rsplit(marker, 1)[-1].strip("的")
+            if len(suffix) >= 4:
+                value = suffix
+                break
+    return value
 
 
 def _dedupe(items: list[str]) -> list[str]:
