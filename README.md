@@ -1,14 +1,15 @@
 # AFAC2026 赛题四金融长文本 Agent
 
-面向 AFAC2026 赛题四的金融长文本答题仓库。当前代码为 **V11 candidate**：以无 embedding 的 sparse retrieval 为正式主线，在 A 榜质量模式中加入 claim-centric 检索、证据集合复核、财务指标行索引和受限计算 DSL；两条 LogicRAG 路径继续保留为实验线。
+面向 AFAC2026 赛题四的金融长文本答题仓库。当前代码为 **V12 candidate**：在 V11 sparse retrieval 主线之外新增文档级高召回验证器，按选项和 `doc_id` 独立召回、精确扫描文档、展开相邻上下文，再由 Qwen3.7-Max 统一裁决并按需执行反证审计。
 
 | 状态 | 当前值 |
 |---|---|
-| 官方最佳版本 | V9 claim-centric retrieval |
-| 官方最佳得分 | **49.5701** |
-| 当前候选版本 | V11 financial row index + answer dev gate |
-| V11 官方得分 | 待提交验证，不以本地开发集代替榜单成绩 |
-| 当前可提交 A100 | 100 题，`total_tokens=1,030,141` |
+| 官方最佳版本 | V11 financial row index + answer dev gate |
+| 官方最佳得分 | **58.1679** |
+| V11 反推准确率 | **62 / 100**（按官方公式与 `1,030,141` Token 反推） |
+| 当前候选版本 | V12 exhaustive document verifier + adversarial audit |
+| V12 官方得分 | 待提交验证，不以本地结果代替榜单成绩 |
+| 当前可提交 A100 | 100 题，`total_tokens=2,292,333` |
 
 ## 当前版本提供什么
 
@@ -127,6 +128,7 @@ LogicRAG / thinking / 并发预算配置集中在：
 - `scripts/12_analyze_docling_samples.py`：分析 Docling 样本并生成规则草案
 - `scripts/12_refresh_extra_index_fields_from_existing_index.py`：基于现有索引重写 `chunks.jsonl` 的 `extra_index_fields`
 - `scripts/13_augment_financial_metric_rows.py`：从现有财报 text chunks 生成指标行，无需重新解析 PDF
+- `scripts/14_run_exhaustive_verifier.py`：运行 V12 文档级高召回裁决与可选反证审计
 
 ---
 
@@ -215,7 +217,7 @@ python scripts\09_eval_answer_devset.py --results <answer_results_1.jsonl> <answ
 
 开发集位于 `devsets/answer_level_v1.jsonl`。人工标签必须绑定当前题面和数据版本；不能仅按 qid 复用官网旧示例答案。
 
-### 当前可提交 V11 candidate
+### V11 历史提交
 
 当前仓库中唯一完整 A100 底稿是 `outputs/a_full_adaptive/answer_results.jsonl`。以下命令只用 V11 已核验并发生答案变化的两道财报结果覆盖底稿，同时执行 100 题完整性、答案格式和 Token 一致性校验：
 
@@ -239,6 +241,48 @@ python scripts\04_make_submission.py `
 | 文件编码 | UTF-8 with BOM |
 
 `reg_a_014` 的 V11 回归答案与底稿同为 `ABD`，因此提交候选保留 Token 更低的底稿记录。`outputs/` 按仓库规则不提交 Git，正式 CSV 由上述命令本地复现。
+
+### 当前可提交 V12 candidate
+
+V12 不再让 BM25 Top-K 决定最终证据边界。每个选项都对题目给定的每份文档单独检索，并增加非年份数值/完整日期/实体精确扫描、同页和相邻块展开。首轮统一裁决后，只对与 V11 不一致的题执行反证审计。
+
+运行入口：
+
+```powershell
+python scripts\14_run_exhaustive_verifier.py `
+  --domains financial_reports `
+  --index processed_data\index_financial_rows\bm25_index.pkl `
+  --output-dir outputs\v12_financial_full_max `
+  --model qwen3.7-max `
+  --workers 4
+```
+
+对差异题增加 `--audit` 后，将各域结果按优先级合并：
+
+```powershell
+python scripts\04_make_submission.py `
+  --results outputs\submissions\v11_candidate_20260621\answer_results.jsonl `
+  --override-results outputs\v12_financial_full_max\answer_results.jsonl `
+  --override-results outputs\v12_remaining80_max\answer_results.jsonl `
+  --override-results outputs\v12_financial_patch_max\answer_results.jsonl `
+  --override-results outputs\v12_fin013_focused_max\answer_results.jsonl `
+  --override-results outputs\v12_changed42_audit_max\answer_results.jsonl `
+  --output-dir outputs\submissions\v12_exhaustive_audit_20260622 `
+  --require-complete
+```
+
+生成文件：`outputs/submissions/v12_exhaustive_audit_20260622/answer.csv`。
+
+| 校验项 | 结果 |
+|---|---:|
+| 题目覆盖 | 100 / 100 |
+| 相对 V11 答案变化 | 38 |
+| 开发集 exact-match | 3 / 3 |
+| `summary.total_tokens` | 2,292,333 |
+| 超过 V11 所需最低准确率 | 68 / 100 |
+| 文件编码 | UTF-8 with BOM |
+
+V12 研究与实现说明见 `theory/references/notes/2026-06-22_v12-exhaustive-document-verifier.md`。当前审计版优先验证准确率上限；若官网得分确认方向有效，下一版将只审计高冲突题并复用首轮证据，从而回收 TokenScore。
 
 ---
 

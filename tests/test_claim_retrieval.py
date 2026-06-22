@@ -71,6 +71,30 @@ def test_financial_metric_alias_query_expands_report_disclosure_names():
     assert "净利润" in claim.must_terms[0]
 
 
+def test_dividend_alias_query_covers_h_share_final_dividend_terms():
+    from agent.retrieve.claim_retrieval import build_claim_query_bundles
+
+    question = Question(
+        qid="q_dividend_alias",
+        domain="financial_reports",
+        split="A",
+        question="比较两家公司每股现金分红金额。",
+        options={"A": "甲公司的每股现金分红高于乙公司"},
+        answer_format="mcq",
+        doc_ids=["doc_a", "doc_b"],
+    )
+
+    claim = build_claim_targets(question)[0]
+    bundles = build_claim_query_bundles(question, claim, max_bundles=8)
+    alias_query = next(bundle.query for bundle in bundles if bundle.intent == "metric_alias")
+    focused_query = next(bundle.query for bundle in bundles if bundle.intent == "dividend_final")
+
+    assert "末期股息" in alias_query
+    assert "建议派发末期股息" in alias_query
+    assert "每股股息" in alias_query
+    assert focused_query.startswith("末期股息 建议派发 每10股")
+
+
 
 def test_retrieve_claim_candidates_uses_intent_sources_and_doc_filter():
     from agent.retrieve.claim_retrieval import retrieve_claim_candidates

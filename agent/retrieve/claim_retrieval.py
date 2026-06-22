@@ -10,6 +10,7 @@ from agent.schemas import Question, RetrievalResult
 
 
 _MULTI_DOC_HINTS = ("均", "都", "双方", "两份", "两家", "各自", "所有", "分别", "高于", "低于", "快于", "慢于")
+_DIVIDEND_QUERY_TRIGGERS = ("分红", "股息", "派息", "利润分配")
 _FINANCIAL_METRIC_ALIASES = (
     (
         ("归母净利润", "净利润增速", "归属于母公司"),
@@ -21,7 +22,16 @@ _FINANCIAL_METRIC_ALIASES = (
     ),
     (
         ("每股现金分红", "每股分红", "现金分红", "每股派息"),
-        ("每10股派发现金红利", "每10股派息数", "现金分红金额", "利润分配预案"),
+        (
+            "每10股派发现金红利",
+            "每10股派息数",
+            "现金分红金额",
+            "利润分配预案",
+            "末期股息",
+            "建议派发末期股息",
+            "每股股息",
+            "派息率",
+        ),
     ),
     (
         ("经营活动现金流", "经营现金流"),
@@ -59,6 +69,16 @@ def build_claim_query_bundles(question: Question, claim: ClaimTarget, *, max_bun
                     _join(*metric_aliases, *claim.dates[:2], *claim.numbers[:2]),
                     "metric_alias",
                     3.0,
+                )
+            )
+        if any(trigger in f"{question.question} {claim.option_text}" for trigger in _DIVIDEND_QUERY_TRIGGERS):
+            # 港股年报常用“末期股息”，A 股年报常用“每10股派发现金红利”。
+            # 单独查询可避免宽别名包被“每股收益”等相近财务行稀释。
+            bundles.append(
+                ClaimQueryBundle(
+                    _join("末期股息", "建议派发", "每10股", "每股现金分红", *claim.dates[:2]),
+                    "dividend_final",
+                    4.0,
                 )
             )
     if claim.claim_type == "comparison":
