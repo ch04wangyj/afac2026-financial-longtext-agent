@@ -12,7 +12,7 @@ from agent.schemas import RetrievalResult
 
 
 EXCEPTION_TERMS = ("但", "除外", "仅限", "不得", "应当", "未经", "不包括", "不适用")
-STRUCTURED_TYPES = {"table_row", "financial_metric_row", "figure"}
+STRUCTURED_TYPES = {"table_row", "financial_metric_row", "layout_table_row", "figure"}
 NOISE_TERMS = ("目 录", "目录", "风险提示及说明", "释 义")
 
 
@@ -131,6 +131,9 @@ def _score_candidates(
             score += 0.85
         if chunk_type in STRUCTURED_TYPES:
             score += 0.75
+        if chunk_type == "layout_table_row" and item.metadata.get("table_header"):
+            # V14 行同时携带标题、单位和表头，数值语义比普通页面文本更完整。
+            score += 0.55
         score += _financial_metric_bonus(claim, item, predicate_terms)
         if any(term in text for term in EXCEPTION_TERMS):
             score += 0.25

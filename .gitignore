@@ -14,6 +14,7 @@ agent/local_settings.py
 public_dataset_a/
 origin_dataset/
 .hermes/
+.workbuddy/
 processed_data/
 processed_data_docling_smoke*/
 outputs/

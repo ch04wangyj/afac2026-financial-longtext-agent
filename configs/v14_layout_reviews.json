@@ -1,0 +1,22 @@
+{
+  "res_a_002": {
+    "answer": "ABC",
+    "decision": "direct_source_review",
+    "reason": "原文明确：韩国寿险银保渠道近20年复合增速达到12%；2030年光通信900亿美元和2029年中国ICT 8894.3亿美元也有直接证据。"
+  },
+  "res_a_010": {
+    "answer": "A",
+    "decision": "direct_source_review",
+    "reason": "pack2_text08第5页明确写明上周新成立91.1亿份，其中主动型新发56.3亿份。"
+  },
+  "res_a_011": {
+    "answer": "ABC",
+    "decision": "direct_source_review",
+    "reason": "原文明确客户资金杠杆由1.56倍升至4.09倍、自有资产净利率由4.3%降至1.8%，且超过1000条内置规则成立。"
+  },
+  "res_a_018": {
+    "answer": "A",
+    "decision": "direct_source_review",
+    "reason": "pack2_text07第14页给出2026年3月新能源渗透率51.5%；pack2_text04第47页给出2026年1月宁德时代市占率回升至25%。"
+  }
+}

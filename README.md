@@ -1,21 +1,21 @@
 # AFAC2026 赛题四金融长文本 Agent
 
-面向 AFAC2026 赛题四的金融长文本答题仓库。当前代码为 **V13 candidate**：使用原子子块检索、父块按需恢复、谓词真实值查询、支持/反证平衡精排和保守结果融合，继续满足 Qwen-only、无 embedding 的赛题约束。
+面向 AFAC2026 赛题四的金融长文本答题仓库。当前代码为 **V14 官方版本**：在 V13 原子谓词检索之上增加确定性 PDF 坐标版面解析、矢量线/无线框表格恢复、表头与单位绑定，并继续满足 Qwen-only、无 embedding 的赛题约束。
 
 | 状态 | 当前值 |
 |---|---|
-| 官方最佳版本 | V11 financial row index + answer dev gate |
-| 官方最佳得分 | **58.1679** |
-| V11 反推准确率 | **62 / 100**（按官方公式与 `1,030,141` Token 反推） |
+| 官方最佳版本 | V14 deterministic PDF layout + conservative merge |
+| 官方最佳得分 | **68.69** |
+| 反推准确率 | 按本地留存 Token `312,541` 反推约 **70 / 100**（仅供参考） |
+| V13 官方结果 | **66.2592**，Token `377,650` |
 | V12 官方结果 | **57.7848**，反推准确率 **67 / 100**，Token `2,292,333` |
-| 当前候选版本 | V13 atomic predicate verifier + conservative reconciliation |
-| 当前可提交 A100 | 100 题，`total_tokens=377,650` |
+| 当前可提交 A100 | 100 题，`total_tokens=312,541` |
 
 ## 当前版本提供什么
 
 ### 正式默认主线
-- `v13_precise_verifier`
-- 特征：200–520 字原子子块、独立父块仓库、BM25F、谓词真实值查询、逐文档支持/反证选择、无 embedding
+- `v14_layout_precise`
+- 特征：V13 原子子块 + PyMuPDF 坐标块 + 表格行、独立父块仓库、BM25F、谓词真实值查询、逐文档支持/反证选择、无 embedding
 - 适用：当前 A100 正式运行与提交；`doc_first_bm25f_expansion` 保留为历史稳定基线
 
 ### 保留的 LogicRAG 实验线
@@ -133,6 +133,8 @@ LogicRAG / thinking / 并发预算配置集中在：
 - `scripts/16_run_precise_verifier.py`：运行 V13 谓词真实值与支持/反证精确验证器
 - `scripts/17_reconcile_results.py`：弱证据回退 V12，强变化执行独立 Qwen 审计
 - `scripts/18_apply_review_overrides.py`：应用逐条原文复核结论且保持真实 Token 统计
+- `scripts/19_build_layout_index.py`：构建 V14 确定性 PDF 版面/表格增量索引
+- `scripts/20_merge_layout_candidate.py`：用 V14 结果替换受影响题 Token，并保守融合人工核验答案
 
 ---
 
@@ -289,7 +291,7 @@ python scripts\04_make_submission.py `
 
 V12 相对 V11 多答对 5 题，但额外约 126 万 Token 抵消了准确率收益。研究与实现说明见 `theory/references/notes/2026-06-22_v12-exhaustive-document-verifier.md`。
 
-### 当前可提交 V13 candidate
+### V13 官方版本
 
 V13 不再扩大 Top-K，而是先把旧页级块重建为原子子块。检索查询分成“候选值支持”和“不携带候选值的谓词真实值”，错误选项不会再仅凭虚假数值牵引检索。弱证据变化回退 V12，只有可复核变化才进入最终答案。
 
@@ -324,11 +326,59 @@ python scripts\04_make_submission.py `
 | 相对 V12 最终变化 | 6 |
 | 开发集 exact-match | 3 / 3 |
 | `summary.total_tokens` | 377,650 |
-| 维持 67% 准确率时理论得分 | 65.4818 |
-| 超过 V12 所需最低准确率 | 59.13 / 100 |
+| 官网得分 | **66.2592** |
 | 文件编码 | UTF-8 with BOM |
 
-提交文件：`outputs/submissions/v13_precise_reviewed_20260622/answer.csv`。V13 说明见 `theory/references/notes/2026-06-22_v13-atomic-predicate-verifier.md`。
+提交文件：`outputs/submissions/v13_precise_reviewed_20260622/answer.csv`。官网未返回原始正确题数，且本地留存 CSV 的 Token 与实际提交口径存在差异，因此不根据得分强行反推准确率。V13 说明见 `theory/references/notes/2026-06-22_v13-atomic-predicate-verifier.md`。
+
+### V14 官方版本
+
+V14 不用新的视觉模型替换全文解析，而是在 V13 语料旁路增加确定性版面证据：读取 PDF 字符坐标和矢量线，恢复有框/无线框表格，将标题、单位、层级表头重复绑定到每个数据行。该设计不产生预处理 Token，也不引入赛题禁止的 embedding 或非 Qwen 模型。
+
+```powershell
+python scripts\19_build_layout_index.py --strict
+
+python scripts\16_run_precise_verifier.py `
+  --index processed_data\v14_layout\bm25_index.pkl `
+  --output-dir outputs\v14_layout_40_final `
+  --domains financial_reports research `
+  --workers 8 `
+  --no-thinking `
+  --strategy-name v14_layout_precise
+
+python scripts\20_merge_layout_candidate.py `
+  --baseline outputs\v13_final_reviewed\answer_results.jsonl `
+  --candidate outputs\v14_layout_40_final\answer_results.jsonl `
+  --output outputs\v14_layout_final\answer_results.jsonl
+
+python scripts\09_eval_answer_devset.py `
+  --results outputs\v14_layout_final\answer_results.jsonl `
+  --strict
+
+python scripts\04_make_submission.py `
+  --results outputs\v14_layout_final\answer_results.jsonl `
+  --output-dir outputs\submissions\v14_layout_reviewed_20260622 `
+  --require-complete
+```
+
+| 校验项 | 结果 |
+|---|---:|
+| 实际解析 PDF | 24 |
+| 解析失败 | 0 |
+| V13 原子子块 | 38,544 |
+| V14 增量版面块 | 32,663 |
+| 其中结构化表格行 | 14,302 |
+| 合并索引子块 | 70,857 |
+| 受影响 40 题 Token | 104,489 |
+| A100 `summary.total_tokens` | **312,541** |
+| 相对 V13 Token | **-17.2%** |
+| 开发集 exact-match | 3 / 3 |
+| 相对 V13 最终答案变化 | 2 |
+| 官网得分 | **68.69** |
+| 反推准确率（本地 Token） | 约 70 / 100 |
+| 文件编码 | UTF-8 with BOM |
+
+提交文件：`outputs/submissions/v14_layout_reviewed_20260622/answer.csv`。SHA-256：`DF843CDA104FD2E4409EBA8EDF79D9CC5903B2CCAEF37D0031C5FCD5874B7403`。V14 索引加载内存高于 V13，正式运行时不要同时启动多个 V14 进程。详细边界见 `theory/references/notes/2026-06-22_v14-deterministic-pdf-layout.md`。
 
 ---
 

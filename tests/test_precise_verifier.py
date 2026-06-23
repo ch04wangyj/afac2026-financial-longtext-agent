@@ -89,3 +89,21 @@ def test_precise_verifier_tracks_one_pass_and_audit_usage():
     assert result.token_usage.total_tokens == 24
     assert result.metadata["strategy"] == "v13_precise_verifier"
     assert result.metadata["evidence_id_map"]
+
+
+def test_precise_verifier_can_label_layout_candidate_strategy():
+    index = BM25SearchIndex.build(
+        [
+            _chunk("a", "doc_a", "甲公司2025年营业收入为100亿元。"),
+            _chunk("b", "doc_b", "乙公司2025年营业收入为80亿元。"),
+        ]
+    )
+
+    result = PreciseVerifier(
+        index,
+        _FakeLLM(("AC",)),
+        PreciseVerifierConfig(strategy_name="v14_layout_precise"),
+    ).solve(_question())
+
+    assert result.metadata["strategy"] == "v14_layout_precise"
+    assert all(item.source.startswith("v14_layout_precise:") for item in result.evidence)

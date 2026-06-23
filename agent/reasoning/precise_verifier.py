@@ -32,7 +32,15 @@ class PreciseVerifierConfig:
     answer_max_tokens: int = 1_024
     enable_thinking: bool = True
     audit_enabled: bool = False
-    search_chunk_types: tuple[str, ...] = ("atomic_text", "table_row", "financial_metric_row", "figure")
+    strategy_name: str = "v13_precise_verifier"
+    search_chunk_types: tuple[str, ...] = (
+        "atomic_text",
+        "table_row",
+        "financial_metric_row",
+        "figure",
+        "layout_text",
+        "layout_table_row",
+    )
 
 
 class PreciseVerifier:
@@ -90,7 +98,7 @@ class PreciseVerifier:
             metadata={
                 "answer_format": question.answer_format,
                 "domain": question.domain,
-                "strategy": "v13_precise_verifier",
+                "strategy": self.config.strategy_name,
                 "model": self.llm.settings.qwen_model,
                 "audit_enabled": self.config.audit_enabled,
                 "audit_response": audit_text,
@@ -128,7 +136,7 @@ class PreciseVerifier:
 
         merged = _merge_claim_evidence(selected_by_claim, self.config.max_context_chars)
         return merged, {
-            "strategy": "atomic_predicate_support_counter",
+            "strategy": self.config.strategy_name,
             "selected_count": len(merged),
             "selected_chars": sum(len(item.evidence_text or "") for item in merged),
             "max_context_chars": self.config.max_context_chars,
@@ -154,7 +162,7 @@ class PreciseVerifier:
                     top_k=self.config.top_k_per_query,
                     filter_doc_ids=set(doc_scope) or None,
                     filter_chunk_types=chunk_types,
-                    source=f"v13:{claim.option_key}:{bundle.intent}:mixed",
+                    source=f"{self.config.strategy_name}:{claim.option_key}:{bundle.intent}:mixed",
                     scoring_mode="bm25f_lite",
                 )
             )
@@ -166,7 +174,7 @@ class PreciseVerifier:
                         top_k=self.config.top_k_per_query,
                         filter_doc_ids={doc_id},
                         filter_chunk_types=chunk_types,
-                        source=f"v13:{claim.option_key}:{bundle.intent}:{doc_id}",
+                        source=f"{self.config.strategy_name}:{claim.option_key}:{bundle.intent}:{doc_id}",
                         scoring_mode="bm25f_lite",
                     )
                 )
@@ -204,7 +212,12 @@ class PreciseVerifier:
                 if predicate_hits == 0:
                     continue
                 value_hits = sum(1 for value in values if _compact(value) in text)
-                structure_bonus = 1.0 if chunk.metadata.get("chunk_type") in {"table_row", "financial_metric_row"} else 0.0
+                structure_bonus = (
+                    1.0
+                    if chunk.metadata.get("chunk_type")
+                    in {"table_row", "financial_metric_row", "layout_table_row"}
+                    else 0.0
+                )
                 scored.append((predicate_hits * 2.0 + value_hits * 0.4 + structure_bonus, chunk))
             scored.sort(key=lambda row: row[0], reverse=True)
             for score, chunk in scored[: self.config.predicate_scan_per_doc]:
@@ -212,7 +225,7 @@ class PreciseVerifier:
                     self.index.result_from_chunk(
                         chunk,
                         score=0.3 + min(12.0, score) * 0.02,
-                        source=f"v13:{claim.option_key}:predicate_scan",
+                        source=f"{self.config.strategy_name}:{claim.option_key}:predicate_scan",
                         query=" ".join(predicates),
                     )
                 )

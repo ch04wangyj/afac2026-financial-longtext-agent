@@ -69,3 +69,36 @@ def test_reranker_keeps_actual_value_as_counter_evidence():
     assert selected[0].chunk_id in {"truth", "support"}
     assert {item.chunk_id for item in selected} >= {"truth", "support"}
     assert report.roles.get("counter", 0) >= 1
+
+
+def test_research_and_short_financial_aliases_expand_to_source_terms():
+    question = Question(
+        qid="q2",
+        domain="research",
+        split="a",
+        question="判断新成立基金份额和客户资金杠杆是否正确。",
+        options={"A": "主动型新发56.3亿份，客户资金杠杆为4.09倍"},
+        answer_format="mcq",
+        doc_ids=["doc1"],
+    )
+    claim = build_claim_targets(question)[0]
+    predicates = extract_predicate_terms(question, claim)
+
+    assert "主动型新发" in predicates
+    assert "新成立基金" in predicates
+    assert "客户资金杠杆" in predicates
+
+
+def test_revenue_abbreviation_expands_to_canonical_financial_metric():
+    question = Question(
+        qid="q3",
+        domain="financial_reports",
+        split="a",
+        question="比较两家公司营收规模。",
+        options={"A": "甲公司营收高于乙公司"},
+        answer_format="mcq",
+        doc_ids=["a", "b"],
+    )
+    claim = build_claim_targets(question)[0]
+
+    assert "营业收入" in extract_predicate_terms(question, claim)

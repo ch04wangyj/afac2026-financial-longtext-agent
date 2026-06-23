@@ -33,6 +33,7 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--max-context-chars", type=int, default=12_000)
+    parser.add_argument("--strategy-name", default="v13_precise_verifier")
     args = parser.parse_args()
 
     os.environ["AFAC_QWEN_MODEL"] = args.model
@@ -50,6 +51,7 @@ def main() -> None:
             audit_enabled=args.audit,
             enable_thinking=not args.no_thinking,
             max_context_chars=args.max_context_chars,
+            strategy_name=args.strategy_name,
         ),
     )
     write_json(
@@ -72,7 +74,7 @@ def main() -> None:
     todo = [question for question in questions if question.qid not in existing]
 
     def solve(question):
-        print(f"[{question.qid}] V13 precise solving", flush=True)
+        print(f"[{question.qid}] {args.strategy_name} solving", flush=True)
         return question.qid, verifier.solve(question).to_dict()
 
     solved = dict(existing)
