@@ -17,7 +17,14 @@
 - **失败原因**：5 个答案覆写中净损失 2 题（人工核验仍不可靠，部分"原文支撑"判断有误）
 - **已回退**：所有答案覆写已清空，恢复 V14 状态
 - **保留资产**：V15 代码（layout_pdf.py B1-B4、vl_table_extract.py、scripts 21-23）和 Qwen-VL 离线提取结果保留供后续实验复用
-- **重命名**：旧 V15 计划笔记更名为 `2026-06-23_v15-old-vl-layout-deepening-failed.md`，新 V15 计划见 `2026-06-23_v15-research-grounded-plan.md`
+
+## V15（新）｜2026-06-23 PoT + 自验证 + 自适应路由 + LLM Judge（未提交）
+- **全量运行结果**：100 题完成，4 题 error，52 题与 V14 答案不同
+- **Token**：637,718（V14: 312,541，+104%）
+- **TokenScore**：0.8725（V14: 0.9375）
+- **未提交原因**：Token 翻倍导致即使准确率不变（70/100）得分也降至 67.27 < V14 的 68.69；52 题变化风险过高，需至少 75/100 准确率才能超过 V14（72.08 > 68.69），但无验证手段
+- **关键教训**：PoT+thinking+自验证的 Token 成本远超预期，必须在保证准确率提升的同时控制 Token
+- **保留代码**：pot_reasoner.py、self_verifier.py、adaptive_router.py、v15_verifier.py 供后续 Token 优化复用
 
 ---
 
