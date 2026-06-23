@@ -54,6 +54,16 @@ class LayoutParseConfig:
     min_table_rows: int = 2
     max_table_rows: int = 180
     detect_borderless_tables: bool = True
+    # V15 B1: 跨页表格链式继承
+    enable_chain_continuation: bool = True
+    max_continuation_gap: int = 2  # 允许中间隔页的最大页数
+    # V15 B2: 双栏 X 坐标聚类
+    enable_column_clustering: bool = True
+    # V15 B3: 页眉页脚模糊匹配
+    enable_fuzzy_margin: bool = True
+    fuzzy_margin_threshold: float = 0.75  # 字符相似度阈值
+    # V15 B4: 多级表头展开
+    enable_multilevel_header: bool = True
 
 
 @dataclass(frozen=True)
@@ -108,23 +118,35 @@ def parse_pdf_layout(
     pages: list[LayoutPage] = []
     with fitz.open(path) as document:
         recurring = _recurring_margin_signatures(document, config)
-        previous_table: LayoutTable | None = None
+        if config.enable_fuzzy_margin:
+            recurring = recurring | _detect_recurring_headers_fuzzy(document, config)
+        # 跨页续表跟踪：保留最近几个页的表格，支持隔页继承
+        recent_tables: list[LayoutTable] = []
         for page_index, page in enumerate(document, start=1):
             lines, removed = _extract_visual_lines(page, recurring, config)
             blocks = _extract_text_blocks(page, recurring, config)
             two_column = detect_two_column(blocks, float(page.rect.width))
+            if config.enable_column_clustering and not two_column:
+                two_column = _detect_columns_by_clustering(blocks, float(page.rect.width))
             tables = extract_page_tables(page, lines, page_index, config)
             for table_index, table in enumerate(tables):
                 table.table_id = _stable_table_id(path, page_index, table_index, table)
-                if _is_continuation(previous_table, table):
-                    table.continuation = True
-                    if not table.header:
-                        table.header = list(previous_table.header)
-                    if not table.caption:
-                        table.caption = previous_table.caption
-                    if not table.unit:
-                        table.unit = previous_table.unit
-                previous_table = table
+                if config.enable_chain_continuation:
+                    _apply_chain_continuation(table, recent_tables, config)
+                else:
+                    if _is_continuation(recent_tables[-1] if recent_tables else None, table):
+                        table.continuation = True
+                        if not table.header:
+                            table.header = list(recent_tables[-1].header)
+                        if not table.caption:
+                            table.caption = recent_tables[-1].caption
+                        if not table.unit:
+                            table.unit = recent_tables[-1].unit
+                recent_tables.append(table)
+                # 只保留最近 max_continuation_gap+1 页的表格
+                max_keep = config.max_continuation_gap + 2
+                if len(recent_tables) > max_keep * 3:
+                    recent_tables = recent_tables[-max_keep * 3:]
             pages.append(
                 LayoutPage(
                     page=page_index,
@@ -164,7 +186,7 @@ def build_layout_supplement_chunks(
                     metadata={
                         "layout_source": table.source,
                         "table_id": table.table_id,
-                        "table_header": format_table_header(table.header),
+                        "table_header": format_table_header(table.header, table=table),
                         "table_unit": table.unit,
                         "table_continuation": table.continuation,
                         "row_index": row_index,
@@ -251,15 +273,26 @@ def format_table_row(table: LayoutTable, row: list[str]) -> str:
     if table.unit:
         parts.append(f"单位: {table.unit}")
     if table.header:
-        parts.append(f"表头: {format_table_header(table.header)}")
+        parts.append(f"表头: {format_table_header(table.header, table=table)}")
     if table.continuation:
         parts.append("跨页续表: 是")
     parts.append(f"数据行: {' | '.join(row)}")
     return "\n".join(parts)
 
 
-def format_table_header(header: list[str]) -> str:
-    """把两层年度表头展开到数据列，避免年份和金额/占比顺序歧义。"""
+def format_table_header(header: list[str], *, table: LayoutTable | None = None) -> str:
+    """把两层年度表头展开到数据列，避免年份和金额/占比顺序歧义。
+
+    V15 B4: 如果传入 table 且有多行表头，先尝试多级展开。
+    """
+    # V15 B4: 多级表头展开 — 只在前几行都是非数值行时触发
+    if table is not None and len(table.rows) >= 3:
+        multi_header_rows = _detect_multilevel_header_rows(table.rows)
+        if len(multi_header_rows) >= 2:
+            _, data_rows = _split_header_rows(table.rows)
+            expanded = _expand_multilevel_header(multi_header_rows, data_rows or table.rows[len(multi_header_rows):])
+            if expanded and len(expanded) > 1:
+                return " | ".join(expanded)
     years = [value for value in header if YEAR_RE.search(value)]
     changes = [value for value in header if any(term in value for term in ("同比", "增减", "变化", "变动"))]
     subheaders = [value for value in header if value not in years and value not in changes]
@@ -273,6 +306,25 @@ def format_table_header(header: list[str]) -> str:
         ]
         return " | ".join(expanded)
     return " | ".join(header)
+
+
+def _detect_multilevel_header_rows(rows: list[list[str]]) -> list[list[str]]:
+    """V15 B4: 检测前几行是否是多级表头（非数值行）。
+
+    返回被判定为表头的行列表。只有当连续 2+ 行都是非数值行时才返回多行。
+    """
+    header_rows: list[list[str]] = []
+    for index, row in enumerate(rows[:4]):
+        if not row:
+            continue
+        numeric_count = sum(bool(NUMBER_RE.fullmatch(cell.replace(" ", "").replace(",", ""))) for cell in row)
+        has_year = any(YEAR_RE.search(cell) for cell in row)
+        # 表头行：没有纯数值单元格，或有年份
+        if numeric_count == 0 or (has_year and numeric_count <= 1 and index == 0):
+            header_rows.append(row)
+            continue
+        break
+    return header_rows if len(header_rows) >= 2 else []
 
 
 def _recurring_margin_signatures(document: Any, config: LayoutParseConfig) -> set[str]:
@@ -656,6 +708,238 @@ def _is_continuation(previous: LayoutTable | None, current: LayoutTable) -> bool
     return explicit_continuation or same_header or (
         geometric_continuation and not first_has_header and first_has_value
     )
+
+
+def _apply_chain_continuation(
+    current: LayoutTable,
+    recent_tables: list[LayoutTable],
+    config: LayoutParseConfig,
+) -> None:
+    """V15 B1: 链式跨页续表检测，支持隔页继承和表头变异。
+
+    从最近的表格往回找，允许跳过最多 max_continuation_gap 页。
+    """
+    if not recent_tables:
+        return
+    # 只看当前页之前 max_continuation_gap+1 页内的表格
+    min_page = current.page - config.max_continuation_gap - 1
+    candidates = [t for t in recent_tables if t.page >= min_page and t.page < current.page]
+    if not candidates:
+        return
+    # 按页码降序，优先匹配最近的
+    candidates.sort(key=lambda t: t.page, reverse=True)
+    for candidate in candidates:
+        if _is_continuation_relaxed(candidate, current, config):
+            current.continuation = True
+            if not current.header:
+                current.header = list(candidate.header)
+            if not current.caption:
+                current.caption = candidate.caption
+            if not current.unit:
+                current.unit = candidate.unit
+            return
+
+
+def _is_continuation_relaxed(
+    previous: LayoutTable,
+    current: LayoutTable,
+    config: LayoutParseConfig,
+) -> bool:
+    """V15 B1: 放宽的续表判断，容忍表头变异和行宽差异。"""
+    page_gap = current.page - previous.page
+    if page_gap <= 0 or page_gap > config.max_continuation_gap + 1:
+        return False
+    # 显式续表标记
+    explicit_continuation = "续" in current.caption or "续" in "".join(current.header)
+    if explicit_continuation:
+        return True
+    # 表头相似度（允许列顺序变化、单位行变化）
+    if previous.header and current.header:
+        shared = set(previous.header) & set(current.header)
+        min_len = min(len(previous.header), len(current.header))
+        if min_len > 0 and len(shared) >= max(1, min_len // 2):
+            return True
+    # 行宽容忍：允许差 1 列（新增/删除列）
+    prev_width = _median_row_width(previous.rows)
+    curr_width = _median_row_width(current.rows)
+    if prev_width >= 2 and abs(prev_width - curr_width) <= 1:
+        # 几何条件：前表底部接近页底 + 当前表顶部接近页顶
+        geometric = previous.bbox[3] >= 620 and current.bbox[1] <= 130
+        first = current.rows[0] if current.rows else []
+        first_has_value = sum(bool(NUMBER_RE.search(cell)) for cell in first) >= 1
+        first_has_header = any(YEAR_RE.search(cell) for cell in first)
+        if geometric and first_has_value and not first_has_header:
+            return True
+    return False
+
+
+def _detect_columns_by_clustering(
+    blocks: list[tuple[tuple[float, float, float, float], str]],
+    page_width: float,
+) -> bool:
+    """V15 B2: 基于文本块 X 坐标聚类检测双栏。
+
+    不要求两侧垂直重叠，处理不对称双栏和混合版面。
+    """
+    if page_width <= 0 or len(blocks) < 4:
+        return False
+    center = page_width / 2
+    # 收集所有窄块的 X 中点
+    midpoints: list[float] = []
+    widths: list[float] = []
+    for (x0, _, x1, _), text in blocks:
+        if len(compact_for_search(text)) < 15:
+            continue
+        block_width = x1 - x0
+        if block_width > page_width * 0.64:
+            continue  # 跨栏块跳过
+        midpoints.append((x0 + x1) / 2)
+        widths.append(block_width)
+    if len(midpoints) < 4:
+        return False
+    # 按中点分到左右两组
+    left = [m for m in midpoints if m < center * 0.92]
+    right = [m for m in midpoints if m > center * 1.08]
+    if len(left) < 2 or len(right) < 2:
+        return False
+    # 不对称双栏：只要两侧各有足够多的块即可
+    # 但要排除"单栏左对齐+右侧少量注释"的情况
+    total = len(left) + len(right)
+    min_ratio = 0.2  # 较少一侧至少占 20%
+    if len(left) / total < min_ratio or len(right) / total < min_ratio:
+        return False
+    # 验证 X 中心分离度
+    left_center = sum(left) / len(left)
+    right_center = sum(right) / len(right)
+    if right_center - left_center < page_width * 0.2:
+        return False
+    return True
+
+
+def _detect_recurring_headers_fuzzy(document: Any, config: LayoutParseConfig) -> set[str]:
+    """V15 B3: 模糊匹配跨页页眉页脚。
+
+    处理页码变体、日期变体，以及不完全相同但高度相似的重复行。
+    """
+    from difflib import SequenceMatcher
+
+    page_count = len(document)
+    if page_count < 4:
+        return set()
+    # 收集每页页眉页脚候选行
+    margin_lines: list[list[str]] = []
+    for page in document:
+        height = float(page.rect.height)
+        page_lines: list[str] = []
+        for block in page.get_text("blocks", sort=True):
+            if len(block) < 7 or int(block[6]) != 0:
+                continue
+            y0, y1 = float(block[1]), float(block[3])
+            if y1 > height * config.margin_ratio and y0 < height * (1 - config.margin_ratio):
+                continue
+            for line in str(block[4] or "").splitlines():
+                text = normalize_text(line)
+                if text and len(text) >= 2:
+                    page_lines.append(_fuzzy_margin_signature(text))
+        margin_lines.append(page_lines)
+    # 跨页模糊匹配
+    threshold = max(3, int(page_count * config.recurring_margin_ratio))
+    result: set[str] = set()
+    # 统计每个签名出现的页数
+    signature_pages: dict[str, set[int]] = {}
+    for page_idx, lines in enumerate(margin_lines):
+        for sig in lines:
+            if not sig:
+                continue
+            signature_pages.setdefault(sig, set()).add(page_idx)
+    # 精确匹配
+    for sig, pages in signature_pages.items():
+        if len(pages) >= threshold:
+            result.add(sig)
+    # 模糊匹配：对未达到阈值的签名，找相似签名合并
+    all_sigs = list(signature_pages.keys())
+    for i, sig_a in enumerate(all_sigs):
+        if sig_a in result:
+            continue
+        merged_pages = set(signature_pages[sig_a])
+        for j, sig_b in enumerate(all_sigs):
+            if i == j or sig_b in result:
+                continue
+            similarity = SequenceMatcher(None, sig_a, sig_b).ratio()
+            if similarity >= config.fuzzy_margin_threshold:
+                merged_pages |= signature_pages[sig_b]
+        if len(merged_pages) >= threshold:
+            result.add(sig_a)
+    return result
+
+
+def _fuzzy_margin_signature(text: str) -> str:
+    """V15 B3: 生成模糊页眉页脚签名，归一化页码和日期变体。"""
+    compact = re.sub(r"\s+", "", normalize_text(text)).casefold()
+    # 归一化页码变体: "第X页"、"Page X of Y"、纯数字
+    compact = re.sub(r"第\s*\d+\s*页", "第#页", compact)
+    compact = re.sub(r"page\s*\d+", "page#", compact)
+    compact = re.sub(r"^\d{1,4}$", "#", compact)
+    # 归一化日期变体: "2026年X月X日"、"2026-X-X"
+    compact = re.sub(r"20\d{2}\s*年\s*\d{1,2}\s*月\s*\d{0,2}\s*日?", "日期", compact)
+    compact = re.sub(r"20\d{2}[-/]\d{1,2}[-/]\d{1,2}", "日期", compact)
+    compact = re.sub(r"\d+", "#", compact)
+    return compact if len(compact) >= 2 else ""
+
+
+def _expand_multilevel_header(
+    header_rows: list[list[str]],
+    data_rows: list[list[str]],
+) -> list[str]:
+    """V15 B4: 展开多级表头到数据列。
+
+    支持三级表头（大类→子类→年份）、合并单元格（rowspan/colspan）和嵌套结构。
+    返回展开后的单行表头列表，长度与 data_rows 的列数对齐。
+    """
+    if not header_rows or not data_rows:
+        return header_rows[-1] if header_rows else []
+    # 数据行列数作为目标宽度
+    target_width = max(len(row) for row in data_rows) if data_rows else 0
+    if target_width == 0:
+        return header_rows[-1] if header_rows else []
+    # 单行表头直接返回
+    if len(header_rows) == 1:
+        header = header_rows[0]
+        if len(header) == target_width:
+            return header
+        # 补齐或截断
+        return (header + [""] * target_width)[:target_width]
+    # 多行表头：从上到下逐层展开
+    # 每一行的空单元格先继承同行前一个非空值（水平 colspan），再继承上方同列值（垂直 rowspan）
+    expanded: list[list[str]] = []
+    for row_idx, row in enumerate(header_rows):
+        expanded_row: list[str] = []
+        last_non_empty = ""
+        for col_idx in range(max(len(row), target_width)):
+            cell = row[col_idx] if col_idx < len(row) else ""
+            if not cell:
+                # 水平 colspan：继承同行前一个非空值
+                cell = last_non_empty
+            else:
+                last_non_empty = cell
+            # 垂直 rowspan：如果仍为空且上方同列有值，继承上方
+            if not cell and row_idx > 0 and col_idx < len(expanded[row_idx - 1]):
+                cell = expanded[row_idx - 1][col_idx]
+            expanded_row.append(cell)
+        expanded.append(expanded_row)
+    # 合并多层为单行：用 "/" 连接去重后的层级
+    result: list[str] = []
+    for col_idx in range(target_width):
+        parts: list[str] = []
+        seen: set[str] = set()
+        for row_idx in range(len(expanded)):
+            if col_idx < len(expanded[row_idx]):
+                cell = expanded[row_idx][col_idx]
+                if cell and cell not in seen:
+                    parts.append(cell)
+                    seen.add(cell)
+        result.append("/".join(parts) if parts else "")
+    return result
 
 
 def _median_row_width(rows: list[list[str]]) -> int:
