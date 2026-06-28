@@ -14,3 +14,7 @@
 4. 若引用某篇论文，建议在 `notes/` 中补一份同名摘要，记录其与本项目的关系、可借鉴点和限制。
 
 当前相关项目文档仍保留在上层 `theory/` 目录；本目录更适合收纳后续新增的外部参考资料。
+
+当前主线研究笔记：
+
+- `notes/2026-06-28_v16-structure-selected-truth.md`：从 V14 的 68.6873 分出发，对 PageIndex、LongRefiner、BookRAG、表格深层结构编码和 query-generation table retrieval 做赛题适配与 V16 实现记录。

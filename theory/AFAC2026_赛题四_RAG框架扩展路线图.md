@@ -2,6 +2,8 @@
 
 > 日期：2026-06-09  
 > 目标：把 GraphRAG、LogicRAG、LinearRAG、CRAG、LightRAG、HippoRAG、RAPTOR、KAG/OpenSPG、Self-RAG、IRCoT 等方向拆成“原框架能力”和“本赛题可落地版本”，并持续同步到代码 variants 与评估报告。
+>
+> 2026-06-28 更新：当前正式开发主线已从“继续扩大 GraphRAG/LogicRAG 推理链”转为 V16 的结构导航、文档实体绑定与逐选项真值组装。PageIndex/LongRefiner/BookRAG 只吸收层级导航和证据精炼思想；图构建、embedding、全题 PoT/Judge 不进入当前提交链。详见 `references/notes/2026-06-28_v16-structure-selected-truth.md`。
 
 ---
 

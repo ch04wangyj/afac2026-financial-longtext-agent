@@ -1,15 +1,16 @@
 # AFAC2026 赛题四金融长文本 Agent
 
-面向 AFAC2026 赛题四的金融长文本答题仓库。当前代码为 **V14 官方版本**：在 V13 原子谓词检索之上增加确定性 PDF 坐标版面解析、矢量线/无线框表格恢复、表头与单位绑定，并继续满足 Qwen-only、无 embedding 的赛题约束。
+面向 AFAC2026 赛题四的金融长文本答题仓库。当前开发版本为 **V16 structure-selected-truth candidate**：以 V14 官方版本为基线，增加无向量结构导航、文档业务实体绑定、逐选项真值组装和直接原文复核白名单，继续满足 Qwen-only、无 embedding 的赛题约束。
 
 | 状态 | 当前值 |
 |---|---|
 | 官方最佳版本 | V14 deterministic PDF layout + conservative merge |
-| 官方最佳得分 | **68.69** |
-| 反推准确率 | 按本地留存 Token `312,541` 反推约 **70 / 100**（仅供参考） |
+| 官方最佳得分 | **68.6873** |
+| 反推准确率 | 按官方公式与本地留存 Token `312,541` 反推为 **70 / 100** |
+| 当前开发候选 | V16 structure navigation + selected truth |
 | V13 官方结果 | **66.2592**，Token `377,650` |
 | V12 官方结果 | **57.7848**，反推准确率 **67 / 100**，Token `2,292,333` |
-| 当前可提交 A100 | 100 题，`total_tokens=312,541` |
+| 当前可提交 A100 | 100 题，`total_tokens=315,727`，相对 V14 改 14 题 |
 
 ## 当前版本提供什么
 
@@ -135,6 +136,8 @@ LogicRAG / thinking / 并发预算配置集中在：
 - `scripts/18_apply_review_overrides.py`：应用逐条原文复核结论且保持真实 Token 统计
 - `scripts/19_build_layout_index.py`：构建 V14 确定性 PDF 版面/表格增量索引
 - `scripts/20_merge_layout_candidate.py`：用 V14 结果替换受影响题 Token，并保守融合人工核验答案
+- `scripts/23_merge_v15_candidate.py`：合并多个局部候选，默认回退 V14，仅应用直接证据复核答案
+- `scripts/16_run_precise_verifier.py --structure-navigation --assemble-from-checks`：运行 V16 结构导航与逐项真值组装
 
 ---
 
@@ -379,6 +382,46 @@ python scripts\04_make_submission.py `
 | 文件编码 | UTF-8 with BOM |
 
 提交文件：`outputs/submissions/v14_layout_reviewed_20260622/answer.csv`。SHA-256：`DF843CDA104FD2E4409EBA8EDF79D9CC5903B2CCAEF37D0031C5FCD5874B7403`。V14 索引加载内存高于 V13，正式运行时不要同时启动多个 V14 进程。详细边界见 `theory/references/notes/2026-06-22_v14-deterministic-pdf-layout.md`。
+
+---
+
+### V16 冲刺 80 候选
+
+V16 不再扩大平铺 Top-K，也不启用全题 PoT/Judge。它在 V14 索引上增加 PageIndex-lite 页面/章节导航，将导航命中作为增量候选；同时把数字 `doc_id` 映射为保险产品、公司或研报主题，选项明确点名文档时只在该文档核验。最终答案由逐项 `true/false/uncertain` 结果组装，所有与 V14 不同的答案仍须进入直接原文复核白名单。
+
+```powershell
+python scripts\16_run_precise_verifier.py `
+  --index processed_data\v14_layout\bm25_index.pkl `
+  --output-dir outputs\v16_candidate `
+  --model qwen3.7-max `
+  --workers 8 `
+  --no-thinking `
+  --structure-navigation `
+  --assemble-from-checks
+
+python scripts\23_merge_v15_candidate.py `
+  --baseline outputs\v14_layout_final\answer_results.jsonl `
+  --candidate outputs\v15_selected_truth_insurance_max\answer_results.jsonl outputs\v15_selected_truth_remaining80_max\answer_results.jsonl `
+  --reviews configs\v16_structure_reviews.json `
+  --output outputs\v16_structure_target\answer_results.jsonl
+
+python scripts\04_make_submission.py `
+  --results outputs\v16_structure_target\answer_results.jsonl `
+  --output-dir outputs\submissions\v16_structure_target_20260628 `
+  --require-complete
+```
+
+| 校验项 | 结果 |
+|---|---:|
+| 题目覆盖 | 100 / 100 |
+| 相对 V14 答案变化 | 14 |
+| A100 `summary.total_tokens` | **315,727** |
+| 相对 V14 Token | **+1.0%** |
+| 开发集 exact-match | 3 / 3 |
+| 达到 80 分所需正确数 | 约 82 / 100 |
+| 官网得分 | 待提交验证 |
+
+可提交文件：`outputs/submissions/v16_structure_target_20260628/answer.csv`。SHA-256：`1E6B16AF94F5CF0908899E7CB1A7A3844794708E43EBEC2627EC5A2CB1F6D2EA`。详细设计、论文比较和风险见 `theory/references/notes/2026-06-28_v16-structure-selected-truth.md`。
 
 ---
 

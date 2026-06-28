@@ -102,3 +102,42 @@ def test_revenue_abbreviation_expands_to_canonical_financial_metric():
     claim = build_claim_targets(question)[0]
 
     assert "营业收入" in extract_predicate_terms(question, claim)
+
+
+def test_insurance_clause_terms_expand_to_source_wording():
+    question = Question(
+        qid="q4",
+        domain="insurance",
+        split="a",
+        question="关于施救费用和保单贷款，下列说法正确的是？",
+        options={"A": "施救费用最高不超过保险金额", "B": "允许申请保单贷款"},
+        answer_format="multi",
+        doc_ids=["a", "b"],
+    )
+    claims = build_claim_targets(question)
+
+    first = extract_predicate_terms(question, claims[0])
+    second = extract_predicate_terms(question, claims[1])
+
+    assert "施救费用" in first
+    assert "防止或者减少损失" in first
+    assert "保单贷款" in second
+    assert "现金价值净额" in second
+
+
+def test_contract_penalty_formula_expands_to_ground_truth_terms():
+    question = Question(
+        qid="q5",
+        domain="financial_contracts",
+        split="a",
+        question="以下哪项违约赔偿描述正确？",
+        options={"A": "违约赔偿计算公式包含150%的惩罚系数"},
+        answer_format="mcq",
+        doc_ids=["text03"],
+    )
+    claim = build_claim_targets(question)[0]
+
+    predicates = extract_predicate_terms(question, claim)
+
+    assert "支付违约金" in predicates
+    assert "本金和利息" in predicates

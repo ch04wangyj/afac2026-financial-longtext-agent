@@ -34,6 +34,16 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--max-context-chars", type=int, default=12_000)
     parser.add_argument("--strategy-name", default="v13_precise_verifier")
+    parser.add_argument(
+        "--structure-navigation",
+        action="store_true",
+        help="启用无 embedding 的章节/页面导航增补召回。",
+    )
+    parser.add_argument(
+        "--assemble-from-checks",
+        action="store_true",
+        help="按逐项 truth 程序化组装答案，要求 truth 表示是否应被题干选中。",
+    )
     args = parser.parse_args()
 
     os.environ["AFAC_QWEN_MODEL"] = args.model
@@ -52,6 +62,8 @@ def main() -> None:
             enable_thinking=not args.no_thinking,
             max_context_chars=args.max_context_chars,
             strategy_name=args.strategy_name,
+            enable_structure_navigation=args.structure_navigation,
+            assemble_answer_from_checks=args.assemble_from_checks,
         ),
     )
     write_json(

@@ -5,11 +5,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from agent.data.document_aliases import document_label, option_doc_scope
 from agent.index.bm25 import BM25SearchIndex
 from agent.llm.qwen_client import QwenClient
 from agent.reasoning.answer_parser import extract_json_object, parse_answer
 from agent.retrieve.claims import ClaimTarget, build_claim_targets
 from agent.retrieve.fusion import reciprocal_rank_fusion
+from agent.retrieve.structured_queries import extract_query_entities
+from agent.retrieve.structure_navigator import NavigationHit, StructureNavigator
 from agent.retrieve.verification_queries import (
     build_verification_query_bundles,
     extract_candidate_values,
@@ -32,6 +35,11 @@ class PreciseVerifierConfig:
     answer_max_tokens: int = 1_024
     enable_thinking: bool = True
     audit_enabled: bool = False
+    enable_structure_navigation: bool = False
+    assemble_answer_from_checks: bool = False
+    navigation_nodes_per_doc: int = 3
+    navigation_candidates_per_doc: int = 10
+    navigation_page_radius: int = 1
     strategy_name: str = "v13_precise_verifier"
     search_chunk_types: tuple[str, ...] = (
         "atomic_text",
@@ -55,6 +63,9 @@ class PreciseVerifier:
         self.index = index
         self.llm = llm
         self.config = config or PreciseVerifierConfig()
+        self.structure_navigator = (
+            StructureNavigator(index) if self.config.enable_structure_navigation else None
+        )
 
     def solve(self, question: Question) -> AnswerResult:
         evidence, report = self.collect_evidence(question)
@@ -82,7 +93,13 @@ class PreciseVerifier:
             if _valid_answer(audited_answer, question):
                 final_text = audit.text
 
-        answer = parse_answer(final_text, question.answer_format)
+        answer = (
+            _answer_from_checks(final_text, question)
+            if self.config.assemble_answer_from_checks
+            else ""
+        )
+        if not _valid_answer(answer, question):
+            answer = parse_answer(final_text, question.answer_format)
         if not _valid_answer(answer, question):
             answer = parse_answer(response.text, question.answer_format)
         if not _valid_answer(answer, question):
@@ -102,6 +119,9 @@ class PreciseVerifier:
                 "model": self.llm.settings.qwen_model,
                 "audit_enabled": self.config.audit_enabled,
                 "audit_response": audit_text,
+                "answer_assembly": (
+                    "checks_truth" if self.config.assemble_answer_from_checks else "model_answer"
+                ),
                 "retrieval_report": report,
                 "evidence_id_map": evidence_map,
             },
@@ -150,7 +170,7 @@ class PreciseVerifier:
         predicates: list[str],
     ) -> list[RetrievalResult]:
         bundles = build_verification_query_bundles(question, claim)
-        doc_scope = list(dict.fromkeys(question.doc_ids))
+        doc_scope = list(dict.fromkeys(option_doc_scope(question, claim.option_text)))
         ranked_lists: list[list[RetrievalResult]] = []
         weights: list[float] = []
         chunk_types = set(self.config.search_chunk_types)
@@ -190,7 +210,71 @@ class PreciseVerifier:
             else []
         )
         scanned = self._predicate_document_scan(claim, predicates, doc_scope)
-        return _dedupe_results([*scanned, *fused])
+        navigated = self._structure_navigation_candidates(question, claim, predicates, doc_scope)
+        return _dedupe_results([*navigated, *scanned, *fused])
+
+    def _structure_navigation_candidates(
+        self,
+        question: Question,
+        claim: ClaimTarget,
+        predicates: list[str],
+        doc_scope: list[str],
+    ) -> list[RetrievalResult]:
+        """先定位自然页/章节，再补充局部证据；该路径永不删除全局 BM25 结果。"""
+        if self.structure_navigator is None:
+            return []
+        entity_terms = [
+            term
+            for term in extract_query_entities(f"{question.question} {claim.option_text}")
+            if term not in extract_candidate_values(claim)
+        ]
+        query = " ".join(dict.fromkeys([*predicates, *entity_terms[:8]]))
+        hits = self.structure_navigator.search(
+            query,
+            doc_ids=doc_scope,
+            top_k_per_doc=self.config.navigation_nodes_per_doc,
+        )
+        allowed_types = set(self.config.search_chunk_types)
+        per_doc: dict[str, list[tuple[float, NavigationHit, Chunk]]] = {}
+        values = extract_candidate_values(claim)
+        for hit, chunk in self.structure_navigator.expand_chunks(
+            hits,
+            page_radius=self.config.navigation_page_radius,
+            allowed_chunk_types=allowed_types,
+        ):
+            text = _compact(chunk.text)
+            predicate_hits = sum(1 for term in predicates if _compact(term) in text)
+            entity_hits = sum(1 for term in entity_terms[:8] if _compact(term) in text)
+            value_hits = sum(1 for value in values if _compact(value) in text)
+            if predicate_hits == 0 and entity_hits == 0:
+                continue
+            score = (
+                1.8 * predicate_hits
+                + 0.7 * entity_hits
+                + 0.35 * value_hits
+                + 0.5 / max(1, hit.rank_in_doc)
+            )
+            per_doc.setdefault(chunk.doc_id, []).append((score, hit, chunk))
+
+        output: list[RetrievalResult] = []
+        for doc_id in doc_scope:
+            ranked = sorted(
+                per_doc.get(doc_id, []),
+                key=lambda item: (-item[0], item[2].chunk_id),
+            )
+            for score, hit, chunk in ranked[: self.config.navigation_candidates_per_doc]:
+                result = self.index.result_from_chunk(
+                    chunk,
+                    score=0.4 + min(15.0, score) * 0.03,
+                    source=f"{self.config.strategy_name}:{claim.option_key}:structure_navigation",
+                    query=query,
+                )
+                result.metadata["navigation_node_id"] = hit.node_id
+                result.metadata["navigation_page"] = hit.page
+                result.metadata["navigation_section"] = hit.section
+                result.metadata["navigation_rank_in_doc"] = hit.rank_in_doc
+                output.append(result)
+        return output
 
     def _predicate_document_scan(
         self,
@@ -262,7 +346,12 @@ def build_precise_judge_messages(question: Question, context: str) -> list[dict[
                 "你是金融文档选项核验器，只能依据给定原文证据。每个选项先确定需要核验的谓词，"
                 "再从同谓词证据读取真实主体、数值、年份、单位、条件和例外。证据角色 support/counter "
                 "只是检索提示，不代表结论。候选值未出现不能单独证明错误；必须找到同谓词真实值或明确否定。"
-                "复合陈述任一子句错误则整项错误；比较题必须核对每份文档；最后严格按题干选择正确项或错误项。"
+                "证据头的 title 是文档对应产品/公司，任何事实只能用于匹配该 title 的选项主体，禁止把其他"
+                "产品的相似条款交叉套用。复合陈述任一子句错误则整项错误；比较题必须核对每份文档；"
+                "checks 中的 truth 必须表示“该选项是否应按题干要求被勾选”，不是括号内解释孤立地是否属实。"
+                "例如题干问‘哪些产品可以赔付’，写着‘某产品不赔’的选项即使括号理由属实也必须判 false；"
+                "题干问‘哪些说法正确’时才判断整句事实。最后严格按题干选择正确项或错误项，"
+                "uncertain 不得当作 true，answer 必须与 checks 及 selection_rule 一致。"
             ),
         },
         {
@@ -333,6 +422,7 @@ def _format_grouped_context(
         role = item.metadata.get("verification_role", "ground_truth")
         block = (
             f"[{evidence_id}][{role}] doc={item.doc_id} page={item.metadata.get('page')} "
+            f"title={document_label(question.domain, item.doc_id, item.metadata.get('title', ''))} "
             f"section={item.metadata.get('section', '')}\n{item.evidence_text.strip()}"
         )
         if blocks and used + len(block) > max_chars:
@@ -386,6 +476,25 @@ def _extract_confidence(text: str) -> float:
         return max(0.0, min(1.0, float(obj.get("confidence", 0.0))))
     except (TypeError, ValueError):
         return 0.0
+
+
+def _answer_from_checks(text: str, question: Question) -> str:
+    """把逐项 selected truth 程序化组装为答案，避免 checks 与 answer 自相矛盾。"""
+    obj = extract_json_object(text) or {}
+    checks = obj.get("checks")
+    if not isinstance(checks, dict):
+        return ""
+    verdicts: dict[str, str] = {}
+    for option_key in question.options:
+        row = checks.get(option_key)
+        if not isinstance(row, dict):
+            return ""
+        verdict = str(row.get("truth", "")).strip().lower()
+        if verdict not in {"true", "false", "uncertain"}:
+            return ""
+        verdicts[option_key] = verdict
+    selected = "".join(key for key in sorted(question.options) if verdicts[key] == "true")
+    return selected if _valid_answer(selected, question) else ""
 
 
 def _compact(value: str) -> str:

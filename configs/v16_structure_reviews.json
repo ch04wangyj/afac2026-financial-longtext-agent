@@ -1,0 +1,72 @@
+{
+  "ins_a_006": {
+    "answer": "A",
+    "decision": "direct_source_review",
+    "reason": "5号条款第2.2.2、2.2.11条支持家庭共享免赔额：两人自付合计2.1万元，扣1万元后赔1.1万元；6号条款对王某本人自付1.2万元扣1万元后赔0.2万元。"
+  },
+  "ins_a_016": {
+    "answer": "CD",
+    "decision": "direct_source_review",
+    "reason": "9号、10号条款第七条均明确施救费用另行计算且最高不超过保险金额；5号、6号医疗险无此机动车施救费用条款。"
+  },
+  "ins_a_018": {
+    "answer": "BCD",
+    "decision": "direct_source_review",
+    "reason": "5号条款允许基本医保个人账户支出抵扣；6号条款允许其他商业保险补偿抵扣；4号重疾险为定额给付、无免赔额。3号条款明确统筹账户补偿不可抵扣。"
+  },
+  "ins_a_019": {
+    "answer": "ABCD",
+    "decision": "direct_source_review",
+    "reason": "1号第6.1条、2号第二十九条、4号第6.1条、16号第1.3条均规定犹豫期内解除合同退还全部已交保险费。"
+  },
+  "fc_a_004": {
+    "answer": "AD",
+    "decision": "direct_source_review",
+    "reason": "text01首页给出本期发行上限10亿元；text13第29页给出三年资产负债率63.51%、65.54%、66.38%。text13未逐年列出三年净利润。"
+  },
+  "fc_a_007": {
+    "answer": "BD",
+    "decision": "direct_source_review",
+    "reason": "text02与text14首页均给出本期发行上限，且两者均有具体违约情形或违约责任条款；text02主体评级为AA+且发行人不是证券公司。"
+  },
+  "fc_a_013": {
+    "answer": "A",
+    "decision": "direct_source_review",
+    "reason": "text03第2页和text10第2页均载有董事、高管真实性责任；text10第33页明确力诺投资资产负债率43.24%。"
+  },
+  "fc_a_014": {
+    "answer": "AB",
+    "decision": "direct_source_review",
+    "reason": "text03第175页违约金基数为延迟支付的本金和利息；text08第259页规定减值测试报告出具之日起10日内书面通知。"
+  },
+  "fc_a_018": {
+    "answer": "A",
+    "decision": "direct_source_review",
+    "reason": "text04发行日期为2025年6月，text06公告日期为2025年9月，第二份晚于第一份。"
+  },
+  "fc_a_019": {
+    "answer": "AB",
+    "decision": "direct_source_review",
+    "reason": "text04股票代码300866，text07股票代码002320；text07列示5.70%和35.83%的资产负债率。第二份证券简称为海峡股份，且第一份未披露转股后具体预测值。"
+  },
+  "reg_a_006": {
+    "answer": "A",
+    "decision": "direct_source_review",
+    "reason": "受益所有人办法第三十九条规定较高风险以上存量客户6个月内完成；信息披露办法第十七条规定未经董事会审议通过的定期报告不得披露。"
+  },
+  "reg_a_007": {
+    "answer": "ACD",
+    "decision": "direct_source_review",
+    "reason": "新办法自2026年1月1日起施行并废止旧规；高风险第三方不得依托；保险公司办理1万元以上保单贷款应核实申请人身份。客户资料保存期并非五年。"
+  },
+  "res_a_011": {
+    "answer": "BC",
+    "decision": "direct_source_review",
+    "reason": "原文指标是“除客户资金杠杆”而非选项A的“客户资金杠杆”；pack2_text02第22页直接支持超过1000条内置规则，pack2_text10第7页支持自有资产净利率4.3%降至1.8%。"
+  },
+  "res_a_017": {
+    "answer": "AB",
+    "decision": "direct_source_review",
+    "reason": "pack2_text17第6页给出2025年金融信创市场接近2500亿元；pack2_text03第1页明确高储蓄并存且服务消费占比相对低位。"
+  }
+}
