@@ -20,7 +20,8 @@ def test_selective_merge_uses_candidate_usage_but_falls_back_on_unreviewed_chang
 
     assert [row.answer for row in merged] == ["A", "B", "A"]
     assert [row.token_usage.total_tokens for row in merged] == [20, 30, 100]
-    assert merged[0].metadata["v14_merge_decision"] == "candidate_difference_fallback"
+    assert merged[0].metadata["merge_decision"] == "candidate_difference_fallback"
+    assert merged[0].metadata["baseline_label"] == "baseline"
 
 
 def test_selective_merge_accepts_explicit_source_review_answer():
@@ -34,4 +35,4 @@ def test_selective_merge_accepts_explicit_source_review_answer():
     )
 
     assert merged[0].answer == "BC"
-    assert merged[0].metadata["v14_source_review"]["reason"] == "direct source"
+    assert merged[0].metadata["source_review"]["reason"] == "direct source"

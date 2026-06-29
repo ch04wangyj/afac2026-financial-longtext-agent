@@ -1,4 +1,4 @@
-"""脚本 17：保守融合 V13 与 V12，并只审计强证据变化。"""
+"""脚本 17：保守融合 V3 与 V2，并只审计强证据变化。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from agent.schemas import AnswerResult
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Conservatively reconcile V13 results with a V12 baseline.")
+    parser = argparse.ArgumentParser(description="保守融合 V3 结果与 V2 基线。")
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)

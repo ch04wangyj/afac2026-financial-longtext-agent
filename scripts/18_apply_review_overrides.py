@@ -1,4 +1,4 @@
-"""脚本 18：应用 V13 人工证据复核覆盖，不改变 Token 统计。"""
+"""脚本 18：应用 V3 人工证据复核覆盖，不改变 Token 统计。"""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ from agent.schemas import AnswerResult
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Apply reviewed answer overrides to V13 results.")
+    parser = argparse.ArgumentParser(description="应用 V3 人工复核答案。")
     parser.add_argument("--results", type=Path, required=True)
-    parser.add_argument("--overrides", type=Path, default=ROOT / "configs" / "v13_review_overrides.json")
+    parser.add_argument("--overrides", type=Path, default=ROOT / "configs" / "v3_atomic_reviews.json")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 

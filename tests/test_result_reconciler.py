@@ -63,6 +63,6 @@ def test_strong_change_requires_high_confidence_confirmation():
     rejected = ResultReconciler(_FakeLLM("AC", 0.5)).reconcile(_question(), current, baseline)
 
     assert confirmed.answer == "AC"
-    assert confirmed.metadata["reconcile_decision"] == "audit_confirmed_v13"
+    assert confirmed.metadata["reconcile_decision"] == "audit_confirmed_v3"
     assert rejected.answer == "A"
     assert confirmed.token_usage.total_tokens == 35

@@ -93,7 +93,7 @@ def test_precise_verifier_tracks_one_pass_and_audit_usage():
 
     assert result.answer == "AC"
     assert result.token_usage.total_tokens == 24
-    assert result.metadata["strategy"] == "v13_precise_verifier"
+    assert result.metadata["strategy"] == "v3_atomic_precise"
     assert result.metadata["evidence_id_map"]
 
 
@@ -108,11 +108,11 @@ def test_precise_verifier_can_label_layout_candidate_strategy():
     result = PreciseVerifier(
         index,
         _FakeLLM(("AC",)),
-        PreciseVerifierConfig(strategy_name="v14_layout_precise"),
+        PreciseVerifierConfig(strategy_name="v4_layout_precise"),
     ).solve(_question())
 
-    assert result.metadata["strategy"] == "v14_layout_precise"
-    assert all(item.source.startswith("v14_layout_precise:") for item in result.evidence)
+    assert result.metadata["strategy"] == "v4_layout_precise"
+    assert all(item.source.startswith("v4_layout_precise:") for item in result.evidence)
 
 
 def test_precise_verifier_structure_navigation_is_additive():

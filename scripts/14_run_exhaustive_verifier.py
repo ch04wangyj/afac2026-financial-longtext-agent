@@ -1,4 +1,4 @@
-"""脚本 14：运行 V12 文档级高召回验证器。"""
+"""脚本 14：运行 V2 文档级高召回验证器。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from agent.reasoning.exhaustive_verifier import ExhaustiveVerifier, ExhaustiveVe
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run V12 exhaustive document verifier.")
+    parser = argparse.ArgumentParser(description="运行 V2 文档级高召回验证器。")
     parser.add_argument("--qids", nargs="*", default=None)
     parser.add_argument("--domains", nargs="*", default=None)
     parser.add_argument("--limit", type=int, default=0)

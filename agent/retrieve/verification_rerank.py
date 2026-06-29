@@ -1,4 +1,4 @@
-"""V13 确定性证据精排：优先谓词覆盖，并显式保留反证候选。"""
+"""V3 确定性证据精排：优先谓词覆盖，并显式保留反证候选。"""
 
 from __future__ import annotations
 
@@ -132,7 +132,7 @@ def _score_candidates(
         if chunk_type in STRUCTURED_TYPES:
             score += 0.75
         if chunk_type == "layout_table_row" and item.metadata.get("table_header"):
-            # V14 行同时携带标题、单位和表头，数值语义比普通页面文本更完整。
+            # V4 行同时携带标题、单位和表头，数值语义比普通页面文本更完整。
             score += 0.55
         score += _financial_metric_bonus(claim, item, predicate_terms)
         if any(term in text for term in EXCEPTION_TERMS):

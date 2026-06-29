@@ -9,13 +9,16 @@ def merge_candidate_with_baseline(
     baseline_rows: list[AnswerResult],
     candidate_rows: list[AnswerResult],
     reviewed_answers: dict[str, dict],
+    *,
+    baseline_label: str = "baseline",
+    candidate_label: str = "candidate",
 ) -> list[AnswerResult]:
     """候选覆盖其运行范围；差异题默认回退，只有逐条复核配置可改答案。"""
     baseline = {row.qid: row for row in baseline_rows}
     candidate = {row.qid: row for row in candidate_rows}
     unknown = sorted((set(candidate) | set(reviewed_answers)) - set(baseline))
     if unknown:
-        raise KeyError(f"Unknown qids in V14 merge: {unknown}")
+        raise KeyError(f"Unknown qids in selective merge: {unknown}")
 
     output: list[AnswerResult] = []
     for baseline_source in baseline_rows:
@@ -30,7 +33,7 @@ def merge_candidate_with_baseline(
         if review:
             result.answer = str(review.get("answer", "")).strip()
             if not result.answer:
-                raise ValueError(f"Empty reviewed V14 answer for {result.qid}")
+                raise ValueError(f"Empty reviewed answer for {result.qid}")
             decision = str(review.get("decision", "direct_source_review"))
         elif candidate_answer == baseline_source.answer:
             decision = "candidate_unchanged"
@@ -38,12 +41,14 @@ def merge_candidate_with_baseline(
             result.answer = baseline_source.answer
             decision = "candidate_difference_fallback"
 
-        result.metadata["strategy"] = "v14_layout_selective_merge"
-        result.metadata["v14_candidate_answer"] = candidate_answer
-        result.metadata["v13_official_baseline_answer"] = baseline_source.answer
-        result.metadata["v14_merge_decision"] = decision
+        result.metadata["strategy"] = f"{candidate_label}_selective_merge"
+        result.metadata["candidate_label"] = candidate_label
+        result.metadata["candidate_answer"] = candidate_answer
+        result.metadata["baseline_label"] = baseline_label
+        result.metadata["baseline_answer"] = baseline_source.answer
+        result.metadata["merge_decision"] = decision
         if review:
-            result.metadata["v14_source_review"] = {
+            result.metadata["source_review"] = {
                 "answer": result.answer,
                 "reason": str(review.get("reason", "")),
             }

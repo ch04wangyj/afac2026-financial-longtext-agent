@@ -1,4 +1,4 @@
-"""脚本 20：用 V14 局部运行替换 Token，并保守融合答案。"""
+"""脚本 20：用 V4 版面局部运行替换 Token，并保守融合答案。"""
 
 from __future__ import annotations
 
@@ -16,17 +16,23 @@ from agent.schemas import AnswerResult
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Merge V14 layout candidate with official V13 baseline.")
+    parser = argparse.ArgumentParser(description="Merge V4 layout candidate with official V3 baseline.")
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
-    parser.add_argument("--reviews", type=Path, default=ROOT / "configs" / "v14_layout_reviews.json")
+    parser.add_argument("--reviews", type=Path, default=ROOT / "configs" / "v4_layout_reviews.json")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
     baseline = [AnswerResult.from_dict(row) for row in read_jsonl(args.baseline)]
     candidate = [AnswerResult.from_dict(row) for row in read_jsonl(args.candidate)]
     reviews = json.loads(args.reviews.read_text(encoding="utf-8"))
-    merged = merge_candidate_with_baseline(baseline, candidate, reviews)
+    merged = merge_candidate_with_baseline(
+        baseline,
+        candidate,
+        reviews,
+        baseline_label="v3_atomic",
+        candidate_label="v4_layout",
+    )
     write_jsonl(args.output, (row.to_dict() for row in merged))
 
     changed = [row.qid for row in merged if row.answer != next(item.answer for item in baseline if item.qid == row.qid)]

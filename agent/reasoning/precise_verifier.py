@@ -1,4 +1,4 @@
-"""V13 精确证据验证器：原子子块检索、谓词真实值召回和紧凑裁决。"""
+"""V3/V5 精确证据验证器：原子检索、结构导航和逐项真值裁决。"""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from agent.schemas import AnswerResult, Chunk, Question, RetrievalResult, TokenU
 
 @dataclass(frozen=True)
 class PreciseVerifierConfig:
-    """V13 默认预算显著小于 V12，减少无关证据和 Token 惩罚。"""
+    """V3 默认预算小于 V2，减少无关证据和 Token 惩罚。"""
 
     top_k_per_query: int = 12
     fused_top_k_per_claim: int = 48
@@ -40,7 +40,7 @@ class PreciseVerifierConfig:
     navigation_nodes_per_doc: int = 3
     navigation_candidates_per_doc: int = 10
     navigation_page_radius: int = 1
-    strategy_name: str = "v13_precise_verifier"
+    strategy_name: str = "v3_atomic_precise"
     search_chunk_types: tuple[str, ...] = (
         "atomic_text",
         "table_row",

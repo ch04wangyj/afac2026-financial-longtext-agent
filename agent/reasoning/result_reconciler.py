@@ -1,4 +1,4 @@
-"""V13 保守结果融合：弱证据回退基线，强变化再做一次独立审计。"""
+"""V3 保守结果融合：弱证据回退 V2，强变化再做一次独立审计。"""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ WEAK_EVIDENCE_TERMS = (
 
 @dataclass(frozen=True)
 class ReconcileConfig:
-    """只有独立审计高置信复现 V13 答案时才接受变化。"""
+    """只有独立审计高置信复现 V3 答案时才接受变化。"""
 
     confidence_threshold: float = 0.8
     max_context_chars: int = 12_000
@@ -33,7 +33,7 @@ class ReconcileConfig:
 
 
 class ResultReconciler:
-    """在低 Token V13 结果与官方得分更高的 V12 基线之间保守仲裁。"""
+    """在低 Token V3 结果与 V2 基线之间保守仲裁。"""
 
     def __init__(self, llm: QwenClient, config: ReconcileConfig | None = None) -> None:
         self.llm = llm
@@ -60,7 +60,7 @@ class ResultReconciler:
             and confidence >= self.config.confidence_threshold
         )
         final_answer = current.answer if accepted else baseline.answer
-        decision = "audit_confirmed_v13" if accepted else "audit_fallback_baseline"
+        decision = "audit_confirmed_v3" if accepted else "audit_fallback_baseline"
         result = _copy_with_decision(current, final_answer, decision, baseline.answer)
         result.token_usage.add(response.usage)
         result.metadata["reconcile_audit_response"] = response.text
@@ -109,7 +109,7 @@ def build_reconcile_messages(
             "role": "user",
             "content": (
                 f"题号：{question.qid}\n题型：{question.answer_format}\n题干：{question.question}\n选项：\n{options}\n\n"
-                f"基线候选：{baseline.answer}\nV13候选：{current.answer}\nV13初审：{current.raw_response}\n\n"
+                f"V2基线候选：{baseline.answer}\nV3候选：{current.answer}\nV3初审：{current.raw_response}\n\n"
                 f"原文证据：\n{context}\n\n"
                 '返回紧凑 JSON：{"answer":"排序后的字母组合","confidence":0.0,"reason":"一句话说明关键反证或支持"}'
             ),
@@ -142,8 +142,8 @@ def _copy_with_decision(
 ) -> AnswerResult:
     result = AnswerResult.from_dict(current.to_dict())
     result.answer = answer
-    result.metadata["strategy"] = "v13_conservative_reconciled"
-    result.metadata["v13_initial_answer"] = current.answer
+    result.metadata["strategy"] = "v3_conservative_reconciled"
+    result.metadata["v3_initial_answer"] = current.answer
     result.metadata["baseline_answer"] = baseline_answer
     result.metadata["reconcile_decision"] = decision
     return result

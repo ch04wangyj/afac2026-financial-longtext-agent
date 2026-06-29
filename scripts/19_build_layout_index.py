@@ -1,4 +1,4 @@
-"""脚本 19：构建 V14 PDF 版面/表格增量语料和 BM25F 索引。"""
+"""脚本 19：构建 V4 PDF 版面/表格增量语料和 BM25F 索引。"""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ DEFAULT_DOMAINS = ["financial_reports", "research"]
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build V14 deterministic PDF layout supplement index.")
+    parser = argparse.ArgumentParser(description="构建 V4 确定性 PDF 版面增量索引。")
     parser.add_argument("--domains", nargs="*", default=DEFAULT_DOMAINS)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--base-children", type=Path, default=None)
@@ -36,10 +36,10 @@ def main() -> None:
 
     settings = Settings.from_env()
     settings.ensure_dirs()
-    output_dir = args.output_dir or settings.processed_dir / "v14_layout"
+    output_dir = args.output_dir or settings.processed_dir / "v4_layout"
     output_dir.mkdir(parents=True, exist_ok=True)
-    base_children_path = args.base_children or settings.processed_dir / "chunks_v13_atomic.jsonl"
-    base_parents_path = args.base_parents or settings.processed_dir / "chunks_v13_parents.jsonl"
+    base_children_path = args.base_children or settings.processed_dir / "chunks_v3_atomic.jsonl"
+    base_parents_path = args.base_parents or settings.processed_dir / "chunks_v3_parents.jsonl"
 
     questions = load_questions(settings.questions_root, domains=args.domains)
     documents = DocRegistry(settings.raw_root).build_documents_for_questions(questions)
@@ -98,7 +98,7 @@ def main() -> None:
 
 
 def merge_supplement_chunks(base: list[Chunk], supplement: list[Chunk]) -> list[Chunk]:
-    """按文档和规范化正文去重，保留 V13 原块的稳定顺序。"""
+    """按文档和规范化正文去重，保留 V3 原块的稳定顺序。"""
     output = list(base)
     seen = {(chunk.doc_id, _compact(chunk.text)) for chunk in base}
     for chunk in supplement:

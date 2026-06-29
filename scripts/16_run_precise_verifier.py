@@ -1,4 +1,4 @@
-"""脚本 16：运行 V13 原子证据精确验证器。"""
+"""脚本 16：运行 V3 原子证据或 V5 结构导航精确验证器。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from agent.reasoning.precise_verifier import PreciseVerifier, PreciseVerifierCon
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run V13 precise atomic evidence verifier.")
+    parser = argparse.ArgumentParser(description="运行 V3/V5 精确证据验证器。")
     parser.add_argument("--qids", nargs="*", default=None)
     parser.add_argument("--domains", nargs="*", default=None)
     parser.add_argument("--limit", type=int, default=0)
@@ -33,7 +33,7 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--max-context-chars", type=int, default=12_000)
-    parser.add_argument("--strategy-name", default="v13_precise_verifier")
+    parser.add_argument("--strategy-name", default="v3_atomic_precise")
     parser.add_argument(
         "--structure-navigation",
         action="store_true",
@@ -53,7 +53,7 @@ def main() -> None:
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    index_path = args.index or settings.processed_dir / "index_v13" / "bm25_index.pkl"
+    index_path = args.index or settings.processed_dir / "v3_atomic" / "bm25_index.pkl"
     verifier = PreciseVerifier(
         BM25SearchIndex.load(index_path),
         QwenClient(settings, dry_run=args.dry_run),
@@ -100,7 +100,7 @@ def main() -> None:
 
     ordered = [solved[question.qid] for question in questions if question.qid in solved]
     write_jsonl(out_path, ordered)
-    print(f"wrote {len(ordered)} V13 results -> {out_path}", flush=True)
+    print(f"wrote {len(ordered)} precise results -> {out_path}", flush=True)
 
 
 def _select_questions(questions, qids: list[str] | None, limit: int):

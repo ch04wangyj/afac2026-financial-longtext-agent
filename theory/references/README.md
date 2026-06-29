@@ -17,4 +17,8 @@
 
 当前主线研究笔记：
 
-- `notes/2026-06-28_v16-structure-selected-truth.md`：从 V14 的 68.6873 分出发，对 PageIndex、LongRefiner、BookRAG、表格深层结构编码和 query-generation table retrieval 做赛题适配与 V16 实现记录。
+- `notes/2026-06-21_v1-financial-row-index-and-dev-gate.md`：财报指标行、受限计算与答案门禁。
+- `notes/2026-06-22_v2-exhaustive-document-verifier.md`：高召回但高成本的负向实验。
+- `notes/2026-06-22_v3-atomic-predicate-verifier.md`：原子谓词与保守融合。
+- `notes/2026-06-22_v4-deterministic-pdf-layout.md`：确定性 PDF 版面与表格解析。
+- `notes/2026-06-28_v5-structure-selected-truth.md`：PageIndex-lite、文档绑定与逐项真值组装。

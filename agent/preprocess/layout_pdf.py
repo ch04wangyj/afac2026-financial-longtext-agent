@@ -1,7 +1,7 @@
-"""V14 无模型 PDF 版面与表格解析。
+"""V4 无模型 PDF 版面与表格解析。
 
 本模块只使用 PDF 自带的文字坐标和矢量线，不调用 OCR、VLM 或其他模型。
-解析结果作为 V13 语料的增量补充，避免一次替换旧文本导致召回回归。
+解析结果作为 V3 语料的增量补充，避免一次替换旧文本导致召回回归。
 """
 
 from __future__ import annotations
@@ -54,15 +54,15 @@ class LayoutParseConfig:
     min_table_rows: int = 2
     max_table_rows: int = 180
     detect_borderless_tables: bool = True
-    # V15 B1: 跨页表格链式继承
+    # 版面增强 B1：跨页表格链式继承
     enable_chain_continuation: bool = True
     max_continuation_gap: int = 2  # 允许中间隔页的最大页数
-    # V15 B2: 双栏 X 坐标聚类
+    # 版面增强 B2：双栏 X 坐标聚类
     enable_column_clustering: bool = True
-    # V15 B3: 页眉页脚模糊匹配
+    # 版面增强 B3：页眉页脚模糊匹配
     enable_fuzzy_margin: bool = True
     fuzzy_margin_threshold: float = 0.75  # 字符相似度阈值
-    # V15 B4: 多级表头展开
+    # 版面增强 B4：多级表头展开
     enable_multilevel_header: bool = True
 
 
@@ -283,9 +283,9 @@ def format_table_row(table: LayoutTable, row: list[str]) -> str:
 def format_table_header(header: list[str], *, table: LayoutTable | None = None) -> str:
     """把两层年度表头展开到数据列，避免年份和金额/占比顺序歧义。
 
-    V15 B4: 如果传入 table 且有多行表头，先尝试多级展开。
+    版面增强 B4：如果传入 table 且有多行表头，先尝试多级展开。
     """
-    # V15 B4: 多级表头展开 — 只在前几行都是非数值行时触发
+    # 多级表头展开只在前几行都是非数值行时触发。
     if table is not None and len(table.rows) >= 3:
         multi_header_rows = _detect_multilevel_header_rows(table.rows)
         if len(multi_header_rows) >= 2:
@@ -309,7 +309,7 @@ def format_table_header(header: list[str], *, table: LayoutTable | None = None) 
 
 
 def _detect_multilevel_header_rows(rows: list[list[str]]) -> list[list[str]]:
-    """V15 B4: 检测前几行是否是多级表头（非数值行）。
+    """检测前几行是否是多级表头（非数值行）。
 
     返回被判定为表头的行列表。只有当连续 2+ 行都是非数值行时才返回多行。
     """
@@ -715,7 +715,7 @@ def _apply_chain_continuation(
     recent_tables: list[LayoutTable],
     config: LayoutParseConfig,
 ) -> None:
-    """V15 B1: 链式跨页续表检测，支持隔页继承和表头变异。
+    """链式跨页续表检测，支持隔页继承和表头变异。
 
     从最近的表格往回找，允许跳过最多 max_continuation_gap 页。
     """
@@ -745,7 +745,7 @@ def _is_continuation_relaxed(
     current: LayoutTable,
     config: LayoutParseConfig,
 ) -> bool:
-    """V15 B1: 放宽的续表判断，容忍表头变异和行宽差异。"""
+    """放宽续表判断，容忍表头变异和行宽差异。"""
     page_gap = current.page - previous.page
     if page_gap <= 0 or page_gap > config.max_continuation_gap + 1:
         return False
@@ -777,7 +777,7 @@ def _detect_columns_by_clustering(
     blocks: list[tuple[tuple[float, float, float, float], str]],
     page_width: float,
 ) -> bool:
-    """V15 B2: 基于文本块 X 坐标聚类检测双栏。
+    """基于文本块 X 坐标聚类检测双栏。
 
     不要求两侧垂直重叠，处理不对称双栏和混合版面。
     """
@@ -817,7 +817,7 @@ def _detect_columns_by_clustering(
 
 
 def _detect_recurring_headers_fuzzy(document: Any, config: LayoutParseConfig) -> set[str]:
-    """V15 B3: 模糊匹配跨页页眉页脚。
+    """模糊匹配跨页页眉页脚。
 
     处理页码变体、日期变体，以及不完全相同但高度相似的重复行。
     """
@@ -874,7 +874,7 @@ def _detect_recurring_headers_fuzzy(document: Any, config: LayoutParseConfig) ->
 
 
 def _fuzzy_margin_signature(text: str) -> str:
-    """V15 B3: 生成模糊页眉页脚签名，归一化页码和日期变体。"""
+    """生成模糊页眉页脚签名，归一化页码和日期变体。"""
     compact = re.sub(r"\s+", "", normalize_text(text)).casefold()
     # 归一化页码变体: "第X页"、"Page X of Y"、纯数字
     compact = re.sub(r"第\s*\d+\s*页", "第#页", compact)
@@ -891,7 +891,7 @@ def _expand_multilevel_header(
     header_rows: list[list[str]],
     data_rows: list[list[str]],
 ) -> list[str]:
-    """V15 B4: 展开多级表头到数据列。
+    """展开多级表头到数据列。
 
     支持三级表头（大类→子类→年份）、合并单元格（rowspan/colspan）和嵌套结构。
     返回展开后的单行表头列表，长度与 data_rows 的列数对齐。
@@ -1016,7 +1016,7 @@ def _make_chunk(
             "path": document.path,
             "chunk_type": chunk_type,
             "hierarchy_level": "child",
-            "parser_name": "pymupdf_layout_v14",
+            "parser_name": "pymupdf_layout_v4",
             **metadata,
         },
     )

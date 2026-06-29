@@ -2,7 +2,7 @@
 
 该模块借鉴 PageIndex/BookRAG 的“先定位自然结构，再读取局部证据”思想，
 但不调用模型生成目录，也不替换原有 BM25 召回。导航结果只用于补充候选页和
-相邻页，避免结构路由出错时压掉 V14 已经能够召回的证据。
+相邻页，避免结构路由出错时压掉 V4 已经能够召回的证据。
 """
 
 from __future__ import annotations
@@ -167,7 +167,7 @@ class StructureNavigator:
 
 
 def _compose_search_text(chunks: list[Chunk], max_chars: int) -> str:
-    """组合标题、结构字段和正文；按规范化文本去重以抑制 V13/V14 重复块。"""
+    """组合标题、结构字段和正文；按规范化文本去重以抑制 V3/V4 重复块。"""
     structural: list[str] = []
     bodies: list[str] = []
     seen_structural: set[str] = set()

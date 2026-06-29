@@ -101,7 +101,7 @@ class BM25SearchIndex:
         parent_chunks: list[Chunk] | None = None,
     ) -> None:
         self.chunks = chunks
-        # V13 只对子块建倒排索引；父块单独保存，避免粗细粒度文本互相争抢 Top-K。
+        # V3 只对子块建倒排索引；父块单独保存，避免粗细粒度文本互相争抢 Top-K。
         self.parent_chunks = list(parent_chunks or [])
         self.parent_chunk_by_id: dict[str, Chunk] = {chunk.chunk_id: chunk for chunk in self.parent_chunks}
         self.tokenizer_mode = tokenizer_mode
