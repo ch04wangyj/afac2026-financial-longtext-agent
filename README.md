@@ -4,13 +4,13 @@
 
 ## 当前结果
 
-| 指标 | V1 | V2 | V3 | V4 | V5 |
-|---|---:|---:|---:|---:|---:|
-| 核心方法 | 财报指标行 | 文档级穷举 | 原子谓词 | 确定性版面 | 结构导航 + 真值组装 |
-| 官网得分 | 58.1679 | 57.7848 | 66.2592 | 68.6873 | **80.4466** |
-| 反推正确题数 | 62 | 67 | 约 68 | 70 | **82** |
-| 在线 Token | 1,030,141 | 2,292,333 | 377,650 | 312,541 | **315,727** |
-| 状态 | 保留 | 负向实验 | 保留 | 保留 | **当前主线** |
+| 指标 | V1 | V2 | V3 | V4 | V5 | V6 candidate |
+|---|---:|---:|---:|---:|---:|---:|
+| 核心方法 | 财报指标行 | 文档级穷举 | 原子谓词 | 确定性版面 | 结构导航 + 真值组装 | 证据契约 + 事实账本 |
+| 官网得分 | 58.1679 | 57.7848 | 66.2592 | 68.6873 | **80.4466** | 待提交 |
+| 反推正确题数 | 62 | 67 | 约 68 | 70 | **82** | 不宣称 |
+| 在线 Token | 1,030,141 | 2,292,333 | 377,650 | 312,541 | **315,727** | 326,076 |
+| 状态 | 保留 | 负向实验 | 保留 | 保留 | **官网基线** | **当前候选** |
 
 V1 到 V5 的结果变化：
 
@@ -19,7 +19,8 @@ V1 到 V5 的结果变化：
 - 在线 Token 从 `1,030,141` 降到 `315,727`，减少约 `69.3%`。
 - V4 到 V5 只增加约 `1.0%` Token，净增 12 道正确题。
 
-官方提交文件保存在本地 `outputs/releases/v1..v5/`。V5 `answer.csv` 的 SHA-256 为：
+官方提交文件保存在本地 `outputs/releases/v1..v5/`。未经官网验证的 V6 只称为
+candidate。V5 `answer.csv` 的 SHA-256 为：
 
 ```text
 1E6B16AF94F5CF0908899E7CB1A7A3844794708E43EBEC2627EC5A2CB1F6D2EA
@@ -43,7 +44,10 @@ flowchart LR
     F --> R2
     R1 --> G["支持 / 反证证据集"]
     R2 --> G
-    G --> H["Qwen3.7-Max 逐项 true/false/uncertain"]
+    G --> EC["选项级证据契约"]
+    EC --> H["Qwen3.7-Max 逐项 true/false/uncertain"]
+    G --> FL["数值事实账本 + 受限计算"]
+    FL --> H
     H --> I["确定性答案组装"]
     I --> J["直接原文复核白名单"]
     J --> K["answer.csv + evidence.json + token_usage.json"]
@@ -93,6 +97,16 @@ flowchart LR
 
 增加 PageIndex-lite、产品/公司实体别名、选项级文档范围和程序化真值组装。54 个模型候选变化中仅接受 14 个直接证据闭环，官网验证净增 12 题，达到 **80.4466**。
 
+### V6 candidate：证据充分性、口径和跨题一致性
+
+- 对每个选项记录必需文档、谓词、数值端点、覆盖率、冲突和风险，不完整时返回 `uncertain`。
+- 财报事实账本显式区分合并/母公司、全年/季度、公司总额/客户或分部口径，并用受限 DSL 做比较。
+- 新增近重复事实图，只把同一源文档中的同口径断言送入人工复核，不自动投票改答案。
+- 对 100 题 V6 候选的 41 个变化和 59 个未变化题均完成离线/在线审计；默认只接受 6 个直接原文闭环。
+- 正式 candidate 为 `326,076` Token。若 6 项均修正 V5 错题，预计为 88/100、约 86.28 分；这是待官网验证的上界假设，不是实测成绩。
+
+详细设计、失败案例和 probe 说明见 [docs/V6_EVIDENCE_CONTRACT.md](docs/V6_EVIDENCE_CONTRACT.md)。
+
 完整版本记录见 [VERSION_SCORE_LOG.md](VERSION_SCORE_LOG.md)，简历与面试表述见 [docs/RESUME_CASE_STUDY.md](docs/RESUME_CASE_STUDY.md)。
 
 ## 技术取舍
@@ -101,6 +115,9 @@ flowchart LR
 |---|---|---|
 | BM25F + 字符/词粒度 tokenizer | 是 | 合规、可解释；对中文条款号、数值和专名稳定 |
 | PageIndex-lite | 是 | 利用长文档自然结构，不依赖 embedding；作为增量旁路可控制回归 |
+| SURE-RAG 式充分性聚合 | 部分采用 | 迁移 coverage/conflict/uncertainty 思想，以确定性证据契约实现 |
+| H-STAR 式表格混合推理 | 部分采用 | 先恢复列/行和口径，再由受限 DSL 执行数值比较 |
+| ChainRAG/FunnelRAG 式渐进检索 | 部分采用 | 只在缺失谓词或数值端点时补检索，不启用无限多轮 Agent |
 | GraphRAG / LightRAG | 否 | A 榜已有候选 `doc_ids`，问题多为局部条款和表格事实；全局图构建成本高且收益不确定 |
 | 全题 LogicRAG / PoT / LLM Judge | 否 | 实验中产生 52 题答案漂移，Token 从 31 万增至 63 万 |
 | 全量 OCR / VLM | 否 | 主要 PDF 有文字层；确定性坐标解析更便于复现，旧视觉候选官网净损失 |
@@ -120,8 +137,8 @@ agent/
   evaluation/    # 开发门禁与保守融合
   llm/           # 百炼 OpenAI-compatible Qwen client
   io/            # JSONL、提交文件和 Token 汇总
-scripts/         # 01-21 可复现流水线
-configs/         # V3/V4/V5 人工复核配置
+scripts/         # 01-24 可复现流水线
+configs/         # V3-V6 分层复核配置
 devsets/         # 带题面指纹的开发集
 tests/           # 单元与集成回归
 theory/          # 论文调研和各版本技术笔记
@@ -212,6 +229,29 @@ python scripts\04_make_submission.py `
 python -m pytest -q
 ```
 
+## 复现 V6 candidate
+
+```powershell
+python scripts\16_run_precise_verifier.py `
+  --index processed_data\v3_atomic\bm25_index.pkl `
+  --output-dir outputs\v6_full_candidate `
+  --model qwen3.7-max `
+  --structure-navigation `
+  --assemble-from-checks `
+  --evidence-contract `
+  --numeric-verifier `
+  --strategy-name v6_evidence_contract
+
+python scripts\23_merge_v6_candidate.py `
+  --output outputs\v6_evidence_final\answer_results.jsonl
+
+python scripts\04_make_submission.py `
+  --results outputs\v6_evidence_final\answer_results.jsonl `
+  --require-complete
+```
+
+默认命令不会纳入 `configs/v6_evidence_reviews.json` 中的 probe。单变量榜单诊断必须显式使用 `--include-probe`。
+
 ## 协作约定
 
 - GitHub 只保留 `main`，功能开发使用短生命周期本地分支，合并后删除。
@@ -221,4 +261,4 @@ python -m pytest -q
 
 ## 下一目标：90 分
 
-在 V5 的 `315,727` Token 下，至少需要 `92/100` 正确，预计综合分约 `90.2572`。这意味着相对 V5 再净增 10 题。下一阶段以证据覆盖门禁、保险/合同计算器、表格 schema 对齐和全称/否定断言验证为主，不再使用全题 Judge 扩大答案漂移。
+V6 candidate 的 `326,076` Token 下，达到 90 分仍需要 `92/100`，预计约 `90.20` 分。当前 6 项直接证据修正即使全部命中也只对应 88/100，因此下一步先用正式 candidate 和两个单变量 probe 获取官网反馈，再针对仍错的口径/题干范围做 V7；不以未经验证的模型差异凑足 10 题。

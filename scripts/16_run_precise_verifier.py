@@ -44,6 +44,16 @@ def main() -> None:
         action="store_true",
         help="按逐项 truth 程序化组装答案，要求 truth 表示是否应被题干选中。",
     )
+    parser.add_argument(
+        "--evidence-contract",
+        action="store_true",
+        help="启用 V6 选项级文档、谓词和数值端点完备性约束。",
+    )
+    parser.add_argument(
+        "--numeric-verifier",
+        action="store_true",
+        help="启用 V6 财报白名单数值账本与确定性比较/增长复算。",
+    )
     args = parser.parse_args()
 
     os.environ["AFAC_QWEN_MODEL"] = args.model
@@ -63,6 +73,8 @@ def main() -> None:
             max_context_chars=args.max_context_chars,
             strategy_name=args.strategy_name,
             enable_structure_navigation=args.structure_navigation,
+            enable_evidence_contract=args.evidence_contract,
+            enable_numeric_verifier=args.numeric_verifier,
             assemble_answer_from_checks=args.assemble_from_checks,
         ),
     )

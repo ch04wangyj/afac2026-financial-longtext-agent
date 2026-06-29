@@ -7,6 +7,8 @@ from agent.reasoning.precise_verifier import (
     PreciseVerifierConfig,
     _answer_from_checks,
     _format_grouped_context,
+    _format_numeric_verification_report,
+    build_tf_judge_messages,
 )
 from agent.retrieve.claims import build_claim_targets
 from agent.schemas import Chunk, Question, RetrievalResult, TokenUsage
@@ -181,3 +183,62 @@ def test_answer_from_checks_uses_selected_truth_not_freeform_answer():
     )
 
     assert _answer_from_checks(response, question) == "AC"
+
+
+def test_numeric_verification_context_exposes_normalized_operands():
+    report = {
+        "facts": [
+            {
+                "fact_id": "F1",
+                "doc_id": "a",
+                "metric": "营业收入",
+                "year": "2024",
+                "raw_value": "777",
+                "unit": "亿元",
+                "normalized_value": "77700000000",
+                "scope": "consolidated",
+            },
+            {
+                "fact_id": "F2",
+                "doc_id": "b",
+                "metric": "营业收入",
+                "year": "2024",
+                "raw_value": "407",
+                "unit": "亿元",
+                "normalized_value": "40700000000",
+                "scope": "consolidated",
+            },
+        ],
+        "calculations": [
+            {
+                "operation": "compare",
+                "expression": "F1 compare F2 = gt",
+                "result": "gt",
+            }
+        ],
+    }
+
+    context = _format_numeric_verification_report(report)
+
+    assert "normalized=77700000000" in context
+    assert "F1 compare F2 = gt" in context
+
+
+def test_tf_prompt_maps_proposition_truth_to_a_or_b_once():
+    question = Question(
+        qid="tf_test",
+        domain="regulatory",
+        split="a",
+        question="该规定自2026年1月1日起施行。",
+        options={"A": "正确", "B": "错误"},
+        answer_format="tf",
+        doc_ids=["doc1"],
+    )
+
+    messages = build_tf_judge_messages(question, "2026年1月1日起施行。")
+    text = "\n".join(message["content"] for message in messages)
+
+    assert "命题全部成立" in text
+    assert "answer=A" in text
+    assert "任一子句不成立" in text
+    assert "answer=B" in text

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from agent.schemas import AnswerResult
 
 
@@ -51,6 +53,8 @@ def merge_candidate_with_baseline(
             result.metadata["source_review"] = {
                 "answer": result.answer,
                 "reason": str(review.get("reason", "")),
+                "source_refs": deepcopy(review.get("source_refs", [])),
+                "confidence": str(review.get("confidence", "confirmed")),
             }
         output.append(result)
     return output

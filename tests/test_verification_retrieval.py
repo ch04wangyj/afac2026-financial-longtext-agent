@@ -141,3 +141,281 @@ def test_contract_penalty_formula_expands_to_ground_truth_terms():
 
     assert "支付违约金" in predicates
     assert "本金和利息" in predicates
+
+
+def test_aml_investigation_retention_expands_to_conditional_rule_terms():
+    question = Question(
+        qid="reg_retention",
+        domain="regulatory",
+        split="a",
+        question="判断反洗钱资料保存期限。",
+        options={"A": "若调查在最低保存期限届满时仍未结束，记录应保存至调查结束"},
+        answer_format="mcq",
+        doc_ids=["strict_v3_009"],
+    )
+    claim = build_claim_targets(question)[0]
+
+    predicates = extract_predicate_terms(question, claim)
+
+    assert "最低保存期限届满" in predicates
+    assert "保存至反洗钱调查工作结束" in predicates
+
+
+def test_insurance_contract_cancellation_expands_to_identity_threshold_terms():
+    question = Question(
+        qid="reg_insurance_identity",
+        domain="regulatory",
+        split="a",
+        question="判断身份核验金额门槛。",
+        options={"A": "客户申请解除保险合同且退还金额为1万元以上时需核实申请人身份"},
+        answer_format="mcq",
+        doc_ids=["strict_v3_009"],
+    )
+    claim = build_claim_targets(question)[0]
+
+    predicates = extract_predicate_terms(question, claim)
+
+    assert "申请解除保险合同" in predicates
+    assert "核实申请人身份" in predicates
+
+
+def test_asset_impairment_notice_uses_option_predicate_not_question_topic():
+    question = Question(
+        qid="fc_notice",
+        domain="financial_contracts",
+        split="a",
+        question="对比两份文档中的违约责任与特殊条款。",
+        options={"A": "若触发资产减值补偿条款，甲方应在报告出具之日起10日内通知"},
+        answer_format="mcq",
+        doc_ids=["text08"],
+    )
+    claim = build_claim_targets(question)[0]
+
+    predicates = extract_predicate_terms(question, claim)
+
+    assert "资产减值补偿" in predicates
+    assert "减值测试报告" in predicates
+    assert "违约责任" not in predicates
+
+
+def test_security_identity_and_issue_terms_are_first_class_predicates():
+    question = Question(
+        qid="fc_identity",
+        domain="financial_contracts",
+        split="a",
+        question="比较证券信息。",
+        options={
+            "A": "两份文档股票代码不同",
+            "B": "第二份文档证券简称是安克创新",
+            "C": "第一份文档初始转股价为19.59元",
+        },
+        answer_format="multi",
+        doc_ids=["text04", "text07"],
+    )
+    predicates = [
+        extract_predicate_terms(question, claim)
+        for claim in build_claim_targets(question)
+    ]
+
+    assert "股票代码" in predicates[0]
+    assert "证券简称" in predicates[1]
+    assert "初始转股价" in predicates[2]
+
+
+def test_conditional_redemption_keeps_exact_relation_ahead_of_generic_redemption():
+    question = Question(
+        qid="fc_redemption",
+        domain="financial_contracts",
+        split="a",
+        question="比较可转债条款。",
+        options={"A": "两份文档均设置有条件赎回条款"},
+        answer_format="mcq",
+        doc_ids=["text04", "text05"],
+    )
+    claim = build_claim_targets(question)[0]
+
+    predicates = extract_predicate_terms(question, claim)
+
+    assert predicates[0] == "有条件赎回条款"
+    assert "未转股余额" in predicates
+
+
+def test_insurance_scenario_terms_expand_to_exclusion_and_formula_wording():
+    question = Question(
+        qid="ins_scenarios",
+        domain="insurance",
+        split="a",
+        question="判断免责与现金价值公式。",
+        options={
+            "A": "酒后驾驶导致失能失智护理状态",
+            "B": "在不具有接种条件的单位接种后发生异常反应",
+            "C": "食品超过保质期导致食物中毒",
+            "D": "给出了不同保单年度的比例公式",
+        },
+        answer_format="multi",
+        doc_ids=["1", "7", "13"],
+    )
+    predicates = [
+        extract_predicate_terms(question, claim)
+        for claim in build_claim_targets(question)
+    ]
+
+    assert "责任免除" in predicates[0]
+    assert "预防接种单位" in predicates[1]
+    assert "超过规定的保质期限" in predicates[2]
+    assert "现金价值等于" in predicates[3]
+
+
+def test_financial_buyback_relation_expands_to_total_amount_and_profit():
+    question = Question(
+        qid="fin_buyback",
+        domain="financial_reports",
+        split="a",
+        question="判断资金运作情况。",
+        options={"A": "现金分红与股份回购总金额超过归母净利润"},
+        answer_format="mcq",
+        doc_ids=["annual_midea_2025_report"],
+    )
+    claim = build_claim_targets(question)[0]
+
+    predicates = extract_predicate_terms(question, claim)
+
+    assert "股份回购" in predicates
+    assert "回购总金额" in predicates
+    assert "归母净利润" in predicates
+
+
+def test_hiv_exclusion_and_financial_growth_terms_expand_to_source_rows():
+    insurance = Question(
+        qid="ins_hiv",
+        domain="insurance",
+        split="a",
+        question="判断免责范围。",
+        options={"A": "感染艾滋病病毒（非输血、职业、器官移植）导致重大疾病"},
+        answer_format="mcq",
+        doc_ids=["4"],
+    )
+    financial = Question(
+        qid="fin_growth",
+        domain="financial_reports",
+        split="a",
+        question="比较两年数据。",
+        options={
+            "A": "2025年营业总收入的增长率高于2024年",
+            "B": "研发投入占营业收入的比例明显提升",
+        },
+        answer_format="multi",
+        doc_ids=["annual_midea_2024_report", "annual_midea_2025_report"],
+    )
+
+    insurance_terms = extract_predicate_terms(
+        insurance,
+        build_claim_targets(insurance)[0],
+    )
+    financial_terms = [
+        extract_predicate_terms(financial, claim)
+        for claim in build_claim_targets(financial)
+    ]
+
+    assert "感染艾滋病病毒" in insurance_terms
+    assert "职业关系" in insurance_terms
+    assert "本年比上年增减" in financial_terms[0]
+    assert "研发费用占营业收入比例" in financial_terms[1]
+
+
+def test_financial_reranker_penalizes_single_customer_scope_for_company_revenue():
+    question = Question(
+        qid="fin_scope",
+        domain="financial_reports",
+        split="a",
+        question="根据年报，以下说法正确的是？",
+        options={"A": "比亚迪2024年营业收入为7771.02亿元"},
+        answer_format="mcq",
+        doc_ids=["annual_byd_2024_report"],
+    )
+    claim = build_claim_targets(question)[0]
+    predicates = extract_predicate_terms(question, claim)
+    total = _result(
+        "total",
+        "annual_byd_2024_report",
+        "营业收入合计 777,102,455,000.00 元",
+        0.6,
+    )
+    total.metadata.update(
+        {
+            "chunk_type": "financial_metric_row",
+            "financial_row": {
+                "metric": "营业收入",
+                "header": "2024年",
+                "raw_row": "营业收入合计 777,102,455,000.00 元",
+                "cells": [{"year": "2024", "raw_value": "777,102,455,000.00"}],
+            },
+        }
+    )
+    customer = _result(
+        "customer",
+        "annual_byd_2024_report",
+        "2024年的营业收入98,561,168千元为对某一单个客户的收入。",
+        1.2,
+    )
+    customer.metadata.update(
+        {
+            "chunk_type": "financial_metric_row",
+            "financial_row": {
+                "metric": "营业收入",
+                "header": "2024年",
+                "raw_row": "2024年的营业收入98,561,168千元为对某一单个客户的收入。",
+                "cells": [{"year": "2024", "raw_value": "98,561,168"}],
+            },
+        }
+    )
+
+    selected, _ = select_verification_evidence(
+        claim,
+        [customer, total],
+        predicates,
+        top_k=1,
+        max_chars=1000,
+    )
+
+    assert selected[0].chunk_id == "total"
+
+
+def test_financial_reranker_prefers_consolidated_over_parent_cashflow_table():
+    question = Question(
+        qid="fin_cashflow_scope",
+        domain="financial_reports",
+        split="a",
+        question="比较两家公司经营活动现金流。",
+        options={"A": "比亚迪经营活动现金流高于另一家公司"},
+        answer_format="mcq",
+        doc_ids=["annual_byd_2024_report"],
+    )
+    claim = build_claim_targets(question)[0]
+    predicates = extract_predicate_terms(question, claim)
+    consolidated = _result(
+        "consolidated",
+        "annual_byd_2024_report",
+        "表名: 合并现金流量表\n数据行: 经营活动产生的现金流量净额 | 133,453,873",
+        0.8,
+    )
+    consolidated.domain = "financial_reports"
+    consolidated.metadata["chunk_type"] = "layout_table_row"
+    parent = _result(
+        "parent",
+        "annual_byd_2024_report",
+        "表名: 公司现金流量表\n数据行: 经营活动产生的现金流量净额 | 6,155,458",
+        1.2,
+    )
+    parent.domain = "financial_reports"
+    parent.metadata["chunk_type"] = "layout_table_row"
+
+    selected, _ = select_verification_evidence(
+        claim,
+        [parent, consolidated],
+        predicates,
+        top_k=1,
+        max_chars=1000,
+    )
+
+    assert selected[0].chunk_id == "consolidated"

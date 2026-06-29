@@ -4,6 +4,8 @@
 > 目标：把 GraphRAG、LogicRAG、LinearRAG、CRAG、LightRAG、HippoRAG、RAPTOR、KAG/OpenSPG、Self-RAG、IRCoT 等方向拆成“原框架能力”和“本赛题可落地版本”，并持续同步到代码 variants 与评估报告。
 >
 > 2026-06-29 更新：当前正式主线为 V5 的结构导航、文档实体绑定与逐选项真值组装，官网得分 `80.4466`。PageIndex/LongRefiner/BookRAG 只吸收层级导航和证据精炼思想；图构建、embedding、全题 PoT/Judge 不进入当前提交链。详见 `references/notes/2026-06-28_v5-structure-selected-truth.md`。
+>
+> 2026-06-29 V6 更新：新增选项级证据契约、财务事实账本、受限计算和来源约束的跨题事实图。V6 为待官网验证 candidate，不能替代 V5 官方成绩。完整记录见 `docs/V6_EVIDENCE_CONTRACT.md`。
 
 ---
 
@@ -44,6 +46,16 @@
 | KAG/OpenSPG | 专业领域知识图谱、事实+逻辑融合 | 金融/监管领域上限高 | Java/Scala 图谱系统较重，搭建成本高 | V3/V4 专项 |
 | Self-RAG | 训练模型生成 reflection tokens，自适应检索/批判 | 自检思想可借鉴 | 原版需要训练/特定模型 | 只借鉴低置信自检 |
 | IRCoT | 检索与 CoT 推理交替进行 | 多步题可逐步补证据 | 迭代调用增加 Token | V2 低置信触发 |
+| SURE-RAG | 集合级证据充分性、冲突与不确定性聚合 | 直接对应“证据相关但不足以证明” | 2026 原论文验证器不可直接用于 Qwen-only 约束 | V6 用确定性证据契约迁移思想 |
+| H-STAR | 多视图列/行抽取 + SQL/文本自适应推理 | 财报表格口径和计算题高度相关 | 原实现不适配当前 PDF 与禁模型约束 | V6 用事实账本 + Python DSL 落地 |
+| ChainRAG / FunnelRAG | 渐进补实体、粗到细检索 | 适合缺失文档/数值端点 | 多轮或句子图会扩大 Token 与复杂度 | 仅做一次受控端点补检索 |
+
+### V6 stop/go 结论
+
+- **继续**：证据充分性、选项文档作用域、数值口径、条件链查询、受限符号计算。
+- **有限继续**：来源约束的轻量事实图，仅用于审计重复断言。
+- **停止**：全题长上下文 Judge、无来源约束的跨题投票、完整 GraphRAG/NeuSym-RAG。
+- **原因**：59 个 V5/V6 同答案题的长上下文复核产生 15 个差异，但逐条原文核验没有一项达到自动覆盖门槛。
 
 ---
 
@@ -169,3 +181,7 @@ python scripts\05_compare_rag.py --tokenizer-modes mixed --variants question_opt
 - Self-RAG: https://arxiv.org/abs/2310.11511
 - IRCoT: https://arxiv.org/abs/2212.10509
 - OpenSPG/KAG: https://github.com/OpenSPG/openspg
+- SURE-RAG: https://arxiv.org/abs/2605.03534
+- H-STAR: https://aclanthology.org/2025.naacl-long.445/
+- ChainRAG: https://aclanthology.org/2025.acl-long.1089/
+- FunnelRAG: https://aclanthology.org/2025.findings-naacl.165/

@@ -9,7 +9,7 @@ from itertools import combinations
 from agent.schemas import Question
 
 
-_COMPARE_HINTS = ("高于", "低于", "大于", "小于", "快于", "慢于", "对比", "比较", "双方", "两家")
+_COMPARE_HINTS = ("高于", "低于", "大于", "小于", "快于", "慢于", "超过", "不超过", "不少于")
 _GROWTH_HINTS = ("同比", "增速", "增长", "下降", "增加", "减少", "变化")
 _ALLOWED_OPERATIONS = {"compare", "difference", "ratio", "growth_rate"}
 _METRIC_QUERY_HINTS = {
@@ -69,6 +69,7 @@ def build_candidate_calculations(question: Question, ledger: dict, *, max_calcul
         and fact.get("year")
         and fact.get("extraction_mode") == "financial_row"
         and fact.get("unit") not in {"", "未标明"}
+        and fact.get("scope", "unknown") not in {"quarter", "segment", "parent"}
         and _metric_relevant(str(fact.get("metric")), question_text)
     ]
     by_metric_year: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
@@ -81,10 +82,20 @@ def build_candidate_calculations(question: Question, ledger: dict, *, max_calcul
     calculations: list[dict] = []
     seen: set[tuple[str, tuple[str, ...]]] = set()
     if any(hint in question_text for hint in _COMPARE_HINTS):
-        for group in by_metric_year.values():
+        for (metric, _, family), group in by_metric_year.items():
+            metric_text = _metric_operation_text(metric, question)
+            if not any(hint in metric_text for hint in _COMPARE_HINTS):
+                continue
+            if family == "ratio" and not _ratio_metric(metric):
+                continue
+            if family == "money" and _ratio_metric(metric):
+                continue
             best_by_doc: dict[str, dict] = {}
             for fact in group:
-                best_by_doc.setdefault(str(fact.get("doc_id", "")), fact)
+                doc_id = str(fact.get("doc_id", ""))
+                current = best_by_doc.get(doc_id)
+                if current is None or _fact_quality(fact) > _fact_quality(current):
+                    best_by_doc[doc_id] = fact
             for left, right in combinations(best_by_doc.values(), 2):
                 if left.get("doc_id") == right.get("doc_id"):
                     continue
@@ -93,15 +104,23 @@ def build_candidate_calculations(question: Question, ledger: dict, *, max_calcul
                     return calculations
 
     if any(hint in question_text for hint in _GROWTH_HINTS):
-        for group in by_doc_metric.values():
-            year_facts = sorted(group, key=lambda fact: str(fact.get("year", "")), reverse=True)
-            distinct_year_facts: list[dict] = []
-            seen_years: set[str] = set()
-            for fact in year_facts:
+        for (_, metric, family), group in by_doc_metric.items():
+            metric_text = _metric_operation_text(metric, question)
+            if not any(hint in metric_text for hint in _GROWTH_HINTS):
+                continue
+            if family == "ratio" and not _ratio_metric(metric):
+                continue
+            best_by_year: dict[str, dict] = {}
+            for fact in group:
                 year = str(fact.get("year", ""))
-                if year and year not in seen_years:
-                    distinct_year_facts.append(fact)
-                    seen_years.add(year)
+                if not year:
+                    continue
+                current = best_by_year.get(year)
+                if current is None or _fact_quality(fact) > _fact_quality(current):
+                    best_by_year[year] = fact
+            distinct_year_facts = [
+                best_by_year[year] for year in sorted(best_by_year, reverse=True)
+            ]
             if len(distinct_year_facts) < 2:
                 continue
             _append_calculation(
@@ -155,3 +174,30 @@ def _unit_family(unit: str) -> str:
 def _metric_relevant(metric: str, question_text: str) -> bool:
     hints = _METRIC_QUERY_HINTS.get(metric, (metric,))
     return any(hint in question_text for hint in hints)
+
+
+def _metric_operation_text(metric: str, question: Question) -> str:
+    """只返回提到当前指标的选项，避免题干“数据对比”污染其他指标。"""
+    hints = _METRIC_QUERY_HINTS.get(metric, (metric,))
+    matched = [
+        option_text
+        for option_text in question.options.values()
+        if any(hint in option_text for hint in hints)
+    ]
+    return (
+        " ".join(matched)
+        if matched
+        else f"{question.question} {' '.join(question.options.values())}"
+    )
+
+
+def _ratio_metric(metric: str) -> bool:
+    return any(term in metric for term in ("比例", "比率", "率", "强度", "占比"))
+
+
+def _fact_quality(fact: dict) -> tuple[float, int]:
+    """优先完整年度表行；质量并列时由输入顺序保留表中首列。"""
+    return (
+        float(fact.get("quality_score", 0.0) or 0.0),
+        1 if fact.get("scope") == "consolidated" else 0,
+    )

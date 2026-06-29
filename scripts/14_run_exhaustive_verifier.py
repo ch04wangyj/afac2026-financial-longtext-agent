@@ -43,7 +43,8 @@ def main() -> None:
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    index_path = args.index or settings.index_dir / "bm25_index.pkl"
+    # 与精确验证器统一使用当前正式原子索引，避免落回已废弃的 indexes 目录。
+    index_path = args.index or settings.processed_dir / "v3_atomic" / "bm25_index.pkl"
     index = BM25SearchIndex.load(index_path)
     verifier = ExhaustiveVerifier(
         index,

@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 
 from agent.data.document_aliases import document_label, option_doc_scope
 from agent.index.bm25 import BM25SearchIndex
 from agent.llm.qwen_client import QwenClient
 from agent.reasoning.answer_parser import extract_json_object, parse_answer
+from agent.reasoning.calculation_dsl import build_candidate_calculations
+from agent.reasoning.evidence_contract import (
+    build_evidence_contracts,
+    format_evidence_contracts,
+)
+from agent.reasoning.fact_ledger import compile_numeric_fact_ledger
 from agent.retrieve.claims import ClaimTarget, build_claim_targets
 from agent.retrieve.fusion import reciprocal_rank_fusion
 from agent.retrieve.structured_queries import extract_query_entities
@@ -36,6 +43,8 @@ class PreciseVerifierConfig:
     enable_thinking: bool = True
     audit_enabled: bool = False
     enable_structure_navigation: bool = False
+    enable_evidence_contract: bool = False
+    enable_numeric_verifier: bool = False
     assemble_answer_from_checks: bool = False
     navigation_nodes_per_doc: int = 3
     navigation_candidates_per_doc: int = 10
@@ -70,8 +79,39 @@ class PreciseVerifier:
     def solve(self, question: Question) -> AnswerResult:
         evidence, report = self.collect_evidence(question)
         context, evidence_map = _format_grouped_context(question, evidence, self.config.max_context_chars)
+        contract_context = (
+            format_evidence_contracts(
+                {
+                    key: _contract_from_report(value)
+                    for key, value in report.get("evidence_contracts", {}).items()
+                }
+            )
+            if self.config.enable_evidence_contract
+            else ""
+        )
+        numeric_report = _build_numeric_verification_report(
+            question,
+            evidence,
+            enabled=self.config.enable_numeric_verifier,
+        )
+        numeric_context = _format_numeric_verification_report(numeric_report)
+        messages = (
+            build_tf_judge_messages(
+                question,
+                context,
+                contract_context,
+                numeric_context,
+            )
+            if _is_binary_tf(question)
+            else build_precise_judge_messages(
+                question,
+                context,
+                contract_context,
+                numeric_context,
+            )
+        )
         response = self.llm.chat(
-            build_precise_judge_messages(question, context),
+            messages,
             temperature=0.0,
             max_tokens=self.config.answer_max_tokens,
             enable_thinking=self.config.enable_thinking,
@@ -95,7 +135,7 @@ class PreciseVerifier:
 
         answer = (
             _answer_from_checks(final_text, question)
-            if self.config.assemble_answer_from_checks
+            if self.config.assemble_answer_from_checks and not _is_binary_tf(question)
             else ""
         )
         if not _valid_answer(answer, question):
@@ -123,6 +163,7 @@ class PreciseVerifier:
                     "checks_truth" if self.config.assemble_answer_from_checks else "model_answer"
                 ),
                 "retrieval_report": report,
+                "numeric_verification": numeric_report,
                 "evidence_id_map": evidence_map,
             },
         )
@@ -155,12 +196,16 @@ class PreciseVerifier:
             )
 
         merged = _merge_claim_evidence(selected_by_claim, self.config.max_context_chars)
+        contracts = build_evidence_contracts(question, merged)
         return merged, {
             "strategy": self.config.strategy_name,
             "selected_count": len(merged),
             "selected_chars": sum(len(item.evidence_text or "") for item in merged),
             "max_context_chars": self.config.max_context_chars,
             "claims": {claim.option_key: report for claim, _, report in selected_by_claim},
+            "evidence_contracts": {
+                key: contract.to_dict() for key, contract in contracts.items()
+            },
         }
 
     def _collect_claim_candidates(
@@ -337,8 +382,23 @@ class PreciseVerifier:
         return restored
 
 
-def build_precise_judge_messages(question: Question, context: str) -> list[dict[str, str]]:
+def build_precise_judge_messages(
+    question: Question,
+    context: str,
+    contract_context: str = "",
+    numeric_context: str = "",
+) -> list[dict[str, str]]:
     options = "\n".join(f"{key}. {value}" for key, value in sorted(question.options.items()))
+    contract_block = (
+        f"\n\n证据完备性契约（只表示证据是否充分，不表示选项真假）：\n{contract_context}"
+        if contract_context
+        else ""
+    )
+    numeric_block = (
+        f"\n\n确定性数值核验（仅基于列出的事实 ID）：\n{numeric_context}"
+        if numeric_context
+        else ""
+    )
     return [
         {
             "role": "system",
@@ -352,19 +412,144 @@ def build_precise_judge_messages(question: Question, context: str) -> list[dict[
                 "例如题干问‘哪些产品可以赔付’，写着‘某产品不赔’的选项即使括号理由属实也必须判 false；"
                 "题干问‘哪些说法正确’时才判断整句事实。最后严格按题干选择正确项或错误项，"
                 "uncertain 不得当作 true，answer 必须与 checks 及 selection_rule 一致。"
+                "若证据契约列出缺失文档、缺失谓词或缺失数值，不得用其他文档或相似指标补齐，"
+                "对应选项必须先判 uncertain。absence_claim 必须有可穷尽范围的明确原文才能判真；"
+                "financial_scope_ambiguity 表示局部客户、地区或分部口径不能冒充公司整体口径。"
+                "确定性数值核验中的 normalized 已统一金额单位，compare=gt/lt/eq；"
+                "它只验证列出的运算，不代表未列出的选项真假，也不得跨指标解释。"
             ),
         },
         {
             "role": "user",
             "content": (
                 f"题号：{question.qid}\n题型：{question.answer_format}\n题干：{question.question}\n选项：\n{options}\n\n"
-                f"按选项分组的原文证据：\n{context}\n\n"
+                f"按选项分组的原文证据：\n{context}{contract_block}{numeric_block}\n\n"
                 "返回单个紧凑 JSON，不要 Markdown："
                 '{"checks":{"A":{"truth":"true|false|uncertain","evidence":["A-E1"],"reason":"一句话"}},'
                 '"selection_rule":"correct|incorrect","answer":"A或排序后的多选字母","confidence":0.0}'
             ),
         },
     ]
+
+
+def build_tf_judge_messages(
+    question: Question,
+    context: str,
+    contract_context: str = "",
+    numeric_context: str = "",
+) -> list[dict[str, str]]:
+    """判断题只裁决题干命题一次，避免把“正确/错误”当作两个独立事实。"""
+    contract_block = (
+        f"\n\n证据完备性契约（仅用于检查证据缺口）：\n{contract_context}"
+        if contract_context
+        else ""
+    )
+    numeric_block = (
+        f"\n\n确定性数值核验：\n{numeric_context}"
+        if numeric_context
+        else ""
+    )
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是金融文档判断题核验器。只判断题干中的完整命题一次，不要分别判断“正确”和“错误”"
+                "两个标签。命题全部成立时 proposition_truth=true 且 answer=A；任一子句不成立时"
+                " proposition_truth=false 且 answer=B。跨文档的“均/且”必须逐份核对，数值须核对"
+                "年份、单位和口径。证据不足时可标 uncertain，但仍需基于现有最强证据给出 A 或 B；"
+                "禁止因为选项 B 的文字是“错误”就直接选择 B。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"题号：{question.qid}\n待判断命题：{question.question}\n"
+                f"A=正确，B=错误\n\n原文证据：\n{context}{contract_block}{numeric_block}\n\n"
+                "返回单个紧凑 JSON，不要 Markdown："
+                '{"proposition_truth":"true|false|uncertain","evidence":["A-E1"],'
+                '"reason":"一句话","answer":"A|B","confidence":0.0}'
+            ),
+        },
+    ]
+
+
+def _contract_from_report(data: dict):
+    """从序列化报告恢复契约，避免求解阶段重复扫描证据。"""
+    from agent.reasoning.evidence_contract import OptionEvidenceContract
+
+    return OptionEvidenceContract(**data)
+
+
+def _is_binary_tf(question: Question) -> bool:
+    """识别比赛中 A=正确、B=错误的标准判断题。"""
+    return (
+        question.answer_format == "tf"
+        and question.options.get("A", "").strip() == "正确"
+        and question.options.get("B", "").strip() == "错误"
+    )
+
+
+def _build_numeric_verification_report(
+    question: Question,
+    evidence: list[RetrievalResult],
+    *,
+    enabled: bool,
+) -> dict:
+    """对财报比较/增长题生成白名单数值运算，不执行模型代码。"""
+    if not enabled or question.domain != "financial_reports":
+        return {}
+    ledger = compile_numeric_fact_ledger(question, evidence, max_facts=80)
+    calculations = build_candidate_calculations(
+        question,
+        ledger,
+        max_calculations=24,
+    )
+    used_fact_ids = {
+        fact_id
+        for calculation in calculations
+        for fact_id in calculation.get("operands", [])
+    }
+    facts = [
+        fact
+        for fact in ledger.get("facts", [])
+        if fact.get("fact_id") in used_fact_ids
+    ]
+    return {
+        "facts": facts,
+        "calculations": calculations,
+        "fact_count": len(facts),
+        "calculation_count": len(calculations),
+    }
+
+
+def _format_numeric_verification_report(report: dict) -> str:
+    """把数值核验压缩为模型可直接读取的事实与表达式。"""
+    calculations = list(report.get("calculations") or [])
+    if not calculations:
+        return ""
+    lines: list[str] = []
+    for fact in report.get("facts", []):
+        lines.append(
+            "{fact_id}: doc={doc_id}; metric={metric}; year={year}; "
+            "raw={raw_value}{unit}; normalized={normalized_value}; scope={scope}".format(
+                **fact
+            )
+        )
+    for index, calculation in enumerate(calculations, start=1):
+        result = calculation.get("result", "")
+        if calculation.get("operation") == "growth_rate":
+            result = _format_percent(result)
+        lines.append(
+            f"CALC{index}: {calculation.get('expression', '')}; normalized_result={result}"
+        )
+    return "\n".join(lines)
+
+
+def _format_percent(value: str) -> str:
+    try:
+        return f"{Decimal(str(value)) * Decimal('100'):.4f}%"
+    except (InvalidOperation, ValueError):
+        return str(value)
 
 
 def build_precise_audit_messages(question: Question, context: str, first_response: str) -> list[dict[str, str]]:

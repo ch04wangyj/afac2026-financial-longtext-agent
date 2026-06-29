@@ -79,3 +79,39 @@ def test_option_doc_scope_uses_year_to_disambiguate_financial_reports():
     )
 
     assert option_doc_scope(question, question.options["A"]) == ["annual_byd_2025_report"]
+
+
+def test_ordinal_document_reference_narrows_to_question_order():
+    question = Question(
+        qid="fc-ordinal",
+        domain="financial_contracts",
+        split="a",
+        question="比较两份文档。",
+        options={"A": "第二份文档的发行规模为5亿元"},
+        answer_format="mcq",
+        doc_ids=["text01", "text03"],
+    )
+
+    assert option_doc_scope(question, question.options["A"]) == ["text03"]
+
+
+def test_regulatory_option_scope_uses_business_topic_aliases():
+    due_diligence = (
+        "strict_v3_009_中国人民银行_国家金融监督管理总局_中国证券监督管理委员会令〔2025〕"
+        "第11号（金融机构客户尽职调查和客户身份资料及交易记录保存管理办法）"
+    )
+    question = Question(
+        qid="reg-scope",
+        domain="regulatory",
+        split="a",
+        question="判断监管要求。",
+        options={
+            "A": "上市公司年度报告未经董事会审议不得披露",
+            "B": "若反洗钱调查未结束，交易记录应继续保存",
+        },
+        answer_format="multi",
+        doc_ids=["csrc_0038_att1", due_diligence],
+    )
+
+    assert option_doc_scope(question, question.options["A"]) == ["csrc_0038_att1"]
+    assert option_doc_scope(question, question.options["B"]) == [due_diligence]

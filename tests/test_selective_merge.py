@@ -31,8 +31,16 @@ def test_selective_merge_accepts_explicit_source_review_answer():
     merged = merge_candidate_with_baseline(
         baseline,
         candidate,
-        {"q1": {"answer": "BC", "reason": "direct source"}},
+        {
+            "q1": {
+                "answer": "BC",
+                "reason": "direct source",
+                "source_refs": ["doc-1:p2"],
+                "confidence": "confirmed",
+            }
+        },
     )
 
     assert merged[0].answer == "BC"
     assert merged[0].metadata["source_review"]["reason"] == "direct source"
+    assert merged[0].metadata["source_review"]["source_refs"] == ["doc-1:p2"]

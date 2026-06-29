@@ -1,0 +1,90 @@
+{
+  "confirmed": {
+    "fc_a_014": {
+      "answer": "B",
+      "decision": "direct_source_review",
+      "confidence": "confirmed",
+      "reason": "text03 第 175 页定义的是“违约金”，并非选项 A 所称“违约利息”；text08 第 259 页明确资产减值测试报告出具后 10 日内通知。",
+      "source_refs": [
+        "text03:p175:(4)支付违约金",
+        "text08:p259:资产减值补偿条款"
+      ]
+    },
+    "reg_a_001": {
+      "answer": "ACD",
+      "decision": "direct_source_review",
+      "confidence": "confirmed",
+      "reason": "受益所有人办法第二十七条明确重大差异 30 个工作日内提交；存量较高风险以上客户为 6 个月；第 11 号令施行日期早于第 12 号令。无法尽调时不得先建立业务关系，B 错误。",
+      "source_refs": [
+        "strict_v3_008:第二十七条及存量客户过渡条款",
+        "strict_v3_009:施行日期及无法尽调处置条款"
+      ]
+    },
+    "reg_a_004": {
+      "answer": "ABC",
+      "decision": "direct_source_review",
+      "confidence": "confirmed",
+      "reason": "董事、高管变动 7 日报告、重大差异 30 个工作日提交、撤并分支机构提前 30 日报告均有直接条文；6 个月仅适用于较高风险以上存量客户，并非全部非自然人客户。",
+      "source_refs": [
+        "strict_v3_008:第二十七条及存量客户过渡条款",
+        "strict_v3_016:第二十七条及任职变动条款"
+      ]
+    },
+    "reg_a_005": {
+      "answer": "ABC",
+      "decision": "direct_source_review",
+      "confidence": "confirmed",
+      "reason": "同一支付机构内调任免申请但须 10 日内报告；上市公司受益所有人留存信息包含可用于身份识别的照片；收费调整原则上提前 30 个自然日公示。非重大差异只记录不报告，D 错误。",
+      "source_refs": [
+        "strict_v3_008:上市公司身份信息条款及非重大差异条款",
+        "strict_v3_018:高级管理人员变动条款及第六十二条"
+      ]
+    },
+    "res_a_006": {
+      "answer": "B",
+      "decision": "direct_source_review",
+      "confidence": "confirmed",
+      "reason": "原报告指标为“除客户资金杠杆”从 1.56 倍升至 4.09 倍，题干删去“除”后改变指标含义；自有资产净利率 4.3% 降至 1.8% 仅支持后半句，合取陈述整体错误。",
+      "source_refs": [
+        "pack2_text01:券商杠杆指标",
+        "pack2_text10:p7:自有资产净利率"
+      ]
+    },
+    "res_a_016": {
+      "answer": "ACD",
+      "decision": "direct_source_review",
+      "confidence": "confirmed",
+      "reason": "pack2_text03 第 7 页明确截至 2025 年 12 月服务零售累计同比高出商品零售 1.7 个百分点；居民收入 6.33% 降至 4.99% 与险企四季度利润承压亦有直接数据。手续费及佣金净收入并非明显负增长。",
+      "source_refs": [
+        "pack2_text03:p7:服务零售与居民收入",
+        "pack2_text20:上市银行及险企季度表现"
+      ]
+    }
+  },
+  "probes": {
+    "reg3_literal_rule": {
+      "reg_a_003": {
+        "answer": "A",
+        "decision": "leaderboard_probe",
+        "confidence": "ambiguous",
+        "reason": "诊断项：第 16 条字面规定高敏感性数据原则上不在终端存储，但同时存在“履行法定义务除外”；该题需用单变量提交确认标准答案是否应用例外。",
+        "source_refs": [
+          "strict_v3_008:上市公司受益所有人照片留存条款",
+          "strict_v3_015:第十六条高敏感性数据终端存储条款"
+        ]
+      }
+    },
+    "fc15_duplicate_true_option": {
+      "fc_a_015": {
+        "answer": "B",
+        "decision": "leaderboard_probe",
+        "confidence": "ambiguous",
+        "reason": "诊断项：text03 主体评级 AAA 与 text14 注册金额不超过 180 亿元均有直接原文，但题型为单选；用单变量提交确认官方标签。",
+        "source_refs": [
+          "text03:p3:主体评级 AAA",
+          "text14:p1:注册金额不超过 180 亿元"
+        ]
+      }
+    }
+  }
+}

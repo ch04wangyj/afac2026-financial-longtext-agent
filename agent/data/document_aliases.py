@@ -49,7 +49,15 @@ DOCUMENT_ALIASES: dict[str, dict[str, tuple[str, ...]]] = {
         "pack2_text06": ("化工周报", "大宗商品"),
         "pack2_text07": ("车展前瞻", "新能源渗透率"),
         "pack2_text08": ("基金份额", "主动型新发"),
-        "pack2_text09": ("芯原股份", "芯片设计服务", "集成电路"),
+        "pack2_text09": (
+            "芯原股份",
+            "芯片设计服务",
+            "芯片定制服务",
+            "IP 授权",
+            "IP授权",
+            "数据中心半导体",
+            "集成电路",
+        ),
         "pack2_text10": ("上市券商", "客户资金杠杆"),
         "pack2_text11": ("光通信",),
         "pack2_text13": ("宠物医疗",),
@@ -57,6 +65,22 @@ DOCUMENT_ALIASES: dict[str, dict[str, tuple[str, ...]]] = {
         "pack2_text17": ("银行IT", "银行 IT"),
         "pack2_text19": ("远望谷", "RFID"),
         "pack2_text20": ("经济与金融趋势",),
+    },
+    "regulatory": {
+        "csrc_0038_att1": (
+            "上市公司年度报告",
+            "年度报告",
+            "定期报告",
+            "董事会审议",
+        ),
+        "strict_v3_009_中国人民银行_国家金融监督管理总局_中国证券监督管理委员会令〔2025〕第11号（金融机构客户尽职调查和客户身份资料及交易记录保存管理办法）": (
+            "客户尽职调查",
+            "反洗钱调查",
+            "空壳银行",
+            "解除保险合同",
+            "交易记录",
+            "核实申请人身份",
+        ),
     },
 }
 
@@ -72,6 +96,18 @@ def document_label(domain: str, doc_id: str, fallback_title: str = "") -> str:
 
 def option_doc_scope(question: Question, option_text: str) -> list[str]:
     """选项明确命中文档业务名时缩小范围，否则保持题目给定的完整 doc_ids。"""
+    ordinal_patterns = (
+        (0, ("第一份文档", "第一个文档", "文档一", "前一份文档", "前者")),
+        (1, ("第二份文档", "第二个文档", "文档二", "后一份文档", "后者")),
+    )
+    ordinal_matches = [
+        question.doc_ids[index]
+        for index, markers in ordinal_patterns
+        if index < len(question.doc_ids) and any(marker in option_text for marker in markers)
+    ]
+    if ordinal_matches:
+        return list(dict.fromkeys(str(doc_id) for doc_id in ordinal_matches))
+
     aliases_by_doc = DOCUMENT_ALIASES.get(question.domain, {})
     mentioned_years = set(re.findall(r"(?:19|20)\d{2}", option_text))
     matched: list[str] = []

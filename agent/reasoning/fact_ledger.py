@@ -64,6 +64,8 @@ class NumericFact:
     normalized_value: str
     context: str
     extraction_mode: str
+    scope: str = "unknown"
+    quality_score: float = 0.0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -87,6 +89,8 @@ def compile_numeric_fact_ledger(
         if financial_row:
             metric = str(financial_row.get("metric") or "未识别指标")
             context = str(financial_row.get("raw_row") or text)
+            scope = _infer_scope(f"{text} {context}")
+            quality_score = _financial_row_quality(financial_row, scope)
             for cell_index, cell in enumerate(financial_row.get("cells", []), start=1):
                 raw_number = str(cell.get("raw_value") or "")
                 unit = str(cell.get("unit") or financial_row.get("unit") or "")
@@ -110,6 +114,8 @@ def compile_numeric_fact_ledger(
                     normalized_value=_decimal_text(normalized),
                     context=context,
                     extraction_mode="financial_row",
+                    scope=scope,
+                    quality_score=quality_score,
                 )
                 facts.append((_fact_relevance(fact, query_text, item) + 1.5, fact))
             # 行级 chunk 已提供准确列映射，不再对同一文本做邻近年份猜测。
@@ -143,6 +149,8 @@ def compile_numeric_fact_ledger(
                 normalized_value=_decimal_text(normalized),
                 context=context,
                 extraction_mode="text_regex",
+                scope=_infer_scope(text),
+                quality_score=0.5,
             )
             facts.append((_fact_relevance(fact, query_text, item), fact))
 
@@ -164,7 +172,8 @@ def format_numeric_fact_ledger(ledger: dict) -> str:
     for fact in facts:
         lines.append(
             "{fact_id} | doc={doc_id} | metric={metric} | year={year} | raw={raw_value} {unit} | "
-            "normalized={normalized_value} | mode={extraction_mode} | {context}".format(**fact)
+            "normalized={normalized_value} | mode={extraction_mode} | scope={scope} | "
+            "quality={quality_score} | {context}".format(**fact)
         )
     return "\n".join(lines)
 
@@ -226,4 +235,38 @@ def _fact_relevance(fact: NumericFact, query_text: str, item: RetrievalResult) -
     if item.metadata.get("chunk_type") in {"table", "figure"}:
         score += 0.8
     score += min(1.0, float(item.score) / 10.0)
+    score += min(2.0, fact.quality_score * 0.25)
     return score
+
+
+def _infer_scope(text: str) -> str:
+    """从表名和行文本识别数值口径，供计算阶段过滤局部披露。"""
+    if any(term in text for term in ("分季度主要财务指标", "第一季度", "第二季度", "第三季度", "第四季度")):
+        return "quarter"
+    if any(term in text for term in ("某一单个客户", "单一客户", "分部信息", "分地区", "分行业", "分产品")):
+        return "segment"
+    if any(term in text for term in ("母公司财务报表", "母公司利润表", "公司现金流量表")):
+        return "parent"
+    if any(term in text for term in ("合并利润表", "合并现金流量表", "主要会计数据", "合计")):
+        return "consolidated"
+    return "unknown"
+
+
+def _financial_row_quality(financial_row: dict, scope: str) -> float:
+    """评估结构化财务行是否适合程序化计算。"""
+    cells = list(financial_row.get("cells") or [])
+    years = {str(cell.get("year", "")) for cell in cells if cell.get("year")}
+    quality = 1.0
+    if financial_row.get("header"):
+        quality += 1.5
+    if str(financial_row.get("unit", "")) not in {"", "未标明"}:
+        quality += 1.0
+    if len(cells) >= 2:
+        quality += 0.75
+    if len(years) >= 2:
+        quality += 1.25
+    if scope == "consolidated":
+        quality += 1.0
+    elif scope in {"quarter", "segment", "parent"}:
+        quality -= 3.0
+    return round(quality, 3)

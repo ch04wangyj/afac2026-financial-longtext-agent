@@ -56,3 +56,74 @@ def test_builds_cross_document_compare_and_same_document_growth_candidates():
     assert any(item["operation"] == "growth_rate" and item["operands"] == ["F1", "F2"] for item in calculations)
     assert not any("F4" in item["operands"] for item in calculations)
     assert not any("F5" in item["operands"] for item in calculations)
+
+
+def test_calculations_ignore_quarter_scope_and_unrelated_percent_cells():
+    ledger = {
+        "facts": [
+            {"fact_id": "R1", "doc_id": "a", "metric": "营业收入", "year": "2024", "unit": "元", "normalized_value": "777", "extraction_mode": "financial_row", "scope": "consolidated", "quality_score": 5},
+            {"fact_id": "R2", "doc_id": "b", "metric": "营业收入", "year": "2024", "unit": "元", "normalized_value": "407", "extraction_mode": "financial_row", "scope": "consolidated", "quality_score": 5},
+            {"fact_id": "P1", "doc_id": "a", "metric": "营业收入", "year": "2024", "unit": "%", "normalized_value": "1", "extraction_mode": "financial_row", "scope": "consolidated", "quality_score": 4},
+            {"fact_id": "P2", "doc_id": "b", "metric": "营业收入", "year": "2024", "unit": "%", "normalized_value": "1", "extraction_mode": "financial_row", "scope": "consolidated", "quality_score": 4},
+            {"fact_id": "Q1", "doc_id": "a", "metric": "营业收入", "year": "2023", "unit": "元", "normalized_value": "999", "extraction_mode": "financial_row", "scope": "quarter", "quality_score": 1},
+        ]
+    }
+    question = Question(
+        qid="q2",
+        domain="financial_reports",
+        split="A",
+        question="比较两家公司。",
+        options={"A": "甲公司的营业收入高于乙公司"},
+        answer_format="mcq",
+        doc_ids=["a", "b"],
+    )
+
+    calculations = build_candidate_calculations(question, ledger)
+
+    assert [item["operands"] for item in calculations] == [["R1", "R2"]]
+
+
+def test_growth_uses_highest_quality_fact_for_each_year():
+    ledger = {
+        "facts": [
+            {"fact_id": "SUMMARY", "doc_id": "a", "metric": "净利润", "year": "2025", "unit": "亿元", "normalized_value": "119", "extraction_mode": "financial_row", "scope": "unknown", "quality_score": 1},
+            {"fact_id": "ANNUAL", "doc_id": "a", "metric": "净利润", "year": "2025", "unit": "亿元", "normalized_value": "120", "extraction_mode": "financial_row", "scope": "consolidated", "quality_score": 5},
+            {"fact_id": "PREVIOUS", "doc_id": "a", "metric": "净利润", "year": "2024", "unit": "亿元", "normalized_value": "100", "extraction_mode": "financial_row", "scope": "consolidated", "quality_score": 5},
+        ]
+    }
+    question = Question(
+        qid="q3",
+        domain="financial_reports",
+        split="A",
+        question="判断同比增速。",
+        options={"A": "净利润同比增长"},
+        answer_format="mcq",
+        doc_ids=["a"],
+    )
+
+    calculations = build_candidate_calculations(question, ledger)
+
+    assert calculations[0]["operands"] == ["ANNUAL", "PREVIOUS"]
+
+
+def test_compare_keeps_first_cell_when_parser_repeats_same_year():
+    ledger = {
+        "facts": [
+            {"fact_id": "A_2024", "doc_id": "a", "metric": "营业收入", "year": "2024", "unit": "元", "normalized_value": "777", "extraction_mode": "financial_row", "scope": "consolidated", "quality_score": 5},
+            {"fact_id": "A_MISLABELED_2023", "doc_id": "a", "metric": "营业收入", "year": "2024", "unit": "元", "normalized_value": "602", "extraction_mode": "financial_row", "scope": "consolidated", "quality_score": 5},
+            {"fact_id": "B_2024", "doc_id": "b", "metric": "营业收入", "year": "2024", "unit": "元", "normalized_value": "407", "extraction_mode": "financial_row", "scope": "consolidated", "quality_score": 5},
+        ]
+    }
+    question = Question(
+        qid="q4",
+        domain="financial_reports",
+        split="A",
+        question="比较两家公司。",
+        options={"A": "甲公司的营业收入高于乙公司"},
+        answer_format="mcq",
+        doc_ids=["a", "b"],
+    )
+
+    calculations = build_candidate_calculations(question, ledger)
+
+    assert calculations[0]["operands"] == ["A_2024", "B_2024"]
