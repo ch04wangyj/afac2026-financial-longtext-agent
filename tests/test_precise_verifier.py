@@ -9,6 +9,7 @@ from agent.reasoning.precise_verifier import (
     _format_grouped_context,
     _format_numeric_verification_report,
     build_tf_judge_messages,
+    build_precise_judge_messages,
 )
 from agent.retrieve.claims import build_claim_targets
 from agent.schemas import Chunk, Question, RetrievalResult, TokenUsage
@@ -185,6 +186,19 @@ def test_answer_from_checks_uses_selected_truth_not_freeform_answer():
     assert _answer_from_checks(response, question) == "AC"
 
 
+def test_answer_from_checks_uses_fact_and_question_applicability_layers():
+    question = _question()
+    response = (
+        '{"checks":{'
+        '"A":{"fact_truth":"true","applicable":"true","selected":"true"},'
+        '"B":{"fact_truth":"true","applicable":"false","selected":"true"},'
+        '"C":{"fact_truth":"false","applicable":"true","selected":"false"}'
+        '},"answer":"AB"}'
+    )
+
+    assert _answer_from_checks(response, question) == "A"
+
+
 def test_numeric_verification_context_exposes_normalized_operands():
     report = {
         "facts": [
@@ -242,3 +256,35 @@ def test_tf_prompt_maps_proposition_truth_to_a_or_b_once():
     assert "answer=A" in text
     assert "任一子句不成立" in text
     assert "answer=B" in text
+
+
+def test_question_envelope_only_activates_scope_split_for_explicit_set_query():
+    scope_question = Question(
+        qid="scope_test",
+        domain="regulatory",
+        split="a",
+        question="下列哪些情形需要内部审批或满足金额门槛？",
+        options={"A": "需要董事会审批", "B": "记录保存五年"},
+        answer_format="multi",
+        doc_ids=["doc1"],
+    )
+    scope_text = "\n".join(
+        message["content"]
+        for message in build_precise_judge_messages(
+            scope_question,
+            "原文",
+            enable_question_envelope=True,
+        )
+    )
+    generic_text = "\n".join(
+        message["content"]
+        for message in build_precise_judge_messages(
+            _question(),
+            "原文",
+            enable_question_envelope=True,
+        )
+    )
+
+    assert '"fact_truth":"true|false|uncertain"' in scope_text
+    assert '"applicable":"true|false|uncertain"' in scope_text
+    assert '"truth":"true|false|uncertain"' in generic_text

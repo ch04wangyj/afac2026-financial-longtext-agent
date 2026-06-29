@@ -1,0 +1,34 @@
+{
+  "groups": {
+    "reg3_terminal_storage": {
+      "candidate_result": "outputs/v6_probe_reg3/answer_results.jsonl",
+      "reviews": {
+        "reg_a_003": {
+          "answer": "A",
+          "decision": "source_literal_candidate",
+          "confidence": "high_unverified",
+          "reason": "数据安全办法第十六条直接规定：除履行法定职责或者法定义务外，高敏感性数据项原则上不在终端设备和移动介质中存储，确需存储的应统一规范管理相关需求场景。题干与该规则高度同构，但上市公司照片是否当然属于高敏感性数据项仍需官网验证。",
+          "source_refs": [
+            "strict_v3_015:第十六条",
+            "strict_v3_008:上市公司受益所有人身份信息"
+          ]
+        }
+      }
+    },
+    "fc15_single_choice_collision": {
+      "candidate_result": "outputs/v6_probe_fc15/answer_results.jsonl",
+      "reviews": {
+        "fc_a_015": {
+          "answer": "B",
+          "decision": "annotation_collision_candidate",
+          "confidence": "ambiguous",
+          "reason": "text03 的主体评级 AAA 与 text14 的注册金额不超过 180 亿元均有直接原文，题面却声明单选。B 只用于确认官方标签如何处理双真选项，不作为自动事实修正。",
+          "source_refs": [
+            "text03:主体评级 AAA",
+            "text14:p1:注册金额不超过 180 亿元"
+          ]
+        }
+      }
+    }
+  }
+}

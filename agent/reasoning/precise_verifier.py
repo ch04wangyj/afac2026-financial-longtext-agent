@@ -16,6 +16,10 @@ from agent.reasoning.evidence_contract import (
     format_evidence_contracts,
 )
 from agent.reasoning.fact_ledger import compile_numeric_fact_ledger
+from agent.reasoning.question_envelope import (
+    build_question_envelope,
+    selection_verdict,
+)
 from agent.retrieve.claims import ClaimTarget, build_claim_targets
 from agent.retrieve.fusion import reciprocal_rank_fusion
 from agent.retrieve.structured_queries import extract_query_entities
@@ -45,6 +49,7 @@ class PreciseVerifierConfig:
     enable_structure_navigation: bool = False
     enable_evidence_contract: bool = False
     enable_numeric_verifier: bool = False
+    enable_question_envelope: bool = False
     assemble_answer_from_checks: bool = False
     navigation_nodes_per_doc: int = 3
     navigation_candidates_per_doc: int = 10
@@ -79,6 +84,7 @@ class PreciseVerifier:
     def solve(self, question: Question) -> AnswerResult:
         evidence, report = self.collect_evidence(question)
         context, evidence_map = _format_grouped_context(question, evidence, self.config.max_context_chars)
+        question_envelope = build_question_envelope(question)
         contract_context = (
             format_evidence_contracts(
                 {
@@ -108,6 +114,7 @@ class PreciseVerifier:
                 context,
                 contract_context,
                 numeric_context,
+                enable_question_envelope=self.config.enable_question_envelope,
             )
         )
         response = self.llm.chat(
@@ -164,6 +171,8 @@ class PreciseVerifier:
                 ),
                 "retrieval_report": report,
                 "numeric_verification": numeric_report,
+                "question_envelope": question_envelope.to_dict(),
+                "question_envelope_enabled": self.config.enable_question_envelope,
                 "evidence_id_map": evidence_map,
             },
         )
@@ -387,7 +396,11 @@ def build_precise_judge_messages(
     context: str,
     contract_context: str = "",
     numeric_context: str = "",
+    *,
+    enable_question_envelope: bool = False,
 ) -> list[dict[str, str]]:
+    question_envelope = build_question_envelope(question)
+    use_scope_gate = enable_question_envelope and question_envelope.scope_gate_enabled
     options = "\n".join(f"{key}. {value}" for key, value in sorted(question.options.items()))
     contract_block = (
         f"\n\n证据完备性契约（只表示证据是否充分，不表示选项真假）：\n{contract_context}"
@@ -411,7 +424,13 @@ def build_precise_judge_messages(
                 "checks 中的 truth 必须表示“该选项是否应按题干要求被勾选”，不是括号内解释孤立地是否属实。"
                 "例如题干问‘哪些产品可以赔付’，写着‘某产品不赔’的选项即使括号理由属实也必须判 false；"
                 "题干问‘哪些说法正确’时才判断整句事实。最后严格按题干选择正确项或错误项，"
-                "uncertain 不得当作 true，answer 必须与 checks 及 selection_rule 一致。"
+                + (
+                    "本题存在显式集合范围，每项必须先分别输出 fact_truth 和 applicable，再给出 selected。"
+                    "事实为真但不满足题干要求的类别、关系、主体或口径时，applicable=false 且不得入选。"
+                    if use_scope_gate
+                    else "本题按选项完整事实裁决，checks.truth 表示该选项是否应按题干被选中。"
+                )
+                + "uncertain 不得当作 true，answer 必须与 checks 及题干范围契约一致。"
                 "若证据契约列出缺失文档、缺失谓词或缺失数值，不得用其他文档或相似指标补齐，"
                 "对应选项必须先判 uncertain。absence_claim 必须有可穷尽范围的明确原文才能判真；"
                 "financial_scope_ambiguity 表示局部客户、地区或分部口径不能冒充公司整体口径。"
@@ -423,10 +442,25 @@ def build_precise_judge_messages(
             "role": "user",
             "content": (
                 f"题号：{question.qid}\n题型：{question.answer_format}\n题干：{question.question}\n选项：\n{options}\n\n"
-                f"按选项分组的原文证据：\n{context}{contract_block}{numeric_block}\n\n"
+                + (
+                    f"题干范围契约：\n{question_envelope.to_prompt()}\n\n"
+                    if enable_question_envelope
+                    else ""
+                )
+                + f"按选项分组的原文证据：\n{context}{contract_block}{numeric_block}\n\n"
                 "返回单个紧凑 JSON，不要 Markdown："
-                '{"checks":{"A":{"truth":"true|false|uncertain","evidence":["A-E1"],"reason":"一句话"}},'
-                '"selection_rule":"correct|incorrect","answer":"A或排序后的多选字母","confidence":0.0}'
+                + (
+                    '{"checks":{"A":{"fact_truth":"true|false|uncertain",'
+                    '"applicable":"true|false|uncertain","selected":"true|false|uncertain",'
+                    '"evidence":["A-E1"],"reason":"一句话"}},'
+                    f'"selection_rule":"{question_envelope.selection_rule}",'
+                    '"answer":"A或排序后的多选字母","confidence":0.0}'
+                    if use_scope_gate
+                    else
+                    '{"checks":{"A":{"truth":"true|false|uncertain","evidence":["A-E1"],'
+                    '"reason":"一句话"}},"selection_rule":"correct|incorrect",'
+                    '"answer":"A或排序后的多选字母","confidence":0.0}'
+                )
             ),
         },
     ]
@@ -664,17 +698,25 @@ def _extract_confidence(text: str) -> float:
 
 
 def _answer_from_checks(text: str, question: Question) -> str:
-    """把逐项 selected truth 程序化组装为答案，避免 checks 与 answer 自相矛盾。"""
+    """优先按事实/范围双层裁决组装；兼容 V5/V6 的单一 truth 响应。"""
     obj = extract_json_object(text) or {}
     checks = obj.get("checks")
     if not isinstance(checks, dict):
         return ""
+    selection_rule = build_question_envelope(question).selection_rule
     verdicts: dict[str, str] = {}
     for option_key in question.options:
         row = checks.get(option_key)
         if not isinstance(row, dict):
             return ""
-        verdict = str(row.get("truth", "")).strip().lower()
+        if "fact_truth" in row or "applicable" in row:
+            verdict = selection_verdict(
+                row.get("fact_truth", ""),
+                row.get("applicable", ""),
+                selection_rule,
+            )
+        else:
+            verdict = str(row.get("truth", "")).strip().lower()
         if verdict not in {"true", "false", "uncertain"}:
             return ""
         verdicts[option_key] = verdict

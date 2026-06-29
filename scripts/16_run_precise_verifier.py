@@ -54,6 +54,11 @@ def main() -> None:
         action="store_true",
         help="启用 V6 财报白名单数值账本与确定性比较/增长复算。",
     )
+    parser.add_argument(
+        "--question-envelope",
+        action="store_true",
+        help="启用 V7 题干范围契约；仅对显式集合问题拆分事实真值与适用性。",
+    )
     args = parser.parse_args()
 
     os.environ["AFAC_QWEN_MODEL"] = args.model
@@ -75,6 +80,7 @@ def main() -> None:
             enable_structure_navigation=args.structure_navigation,
             enable_evidence_contract=args.evidence_contract,
             enable_numeric_verifier=args.numeric_verifier,
+            enable_question_envelope=args.question_envelope,
             assemble_answer_from_checks=args.assemble_from_checks,
         ),
     )

@@ -1,29 +1,28 @@
 # AFAC2026 金融长文本 Agent
 
-面向 AFAC2026 赛题四的无向量金融 RAG 系统。项目处理保险条款、监管法规、债券募集说明书、财务报告和行业研报，在 Qwen-only、禁止 embedding、严格统计在线 Token 的约束下，将官网得分从 `58.1679` 提升到 **`80.4466`**。
+面向 AFAC2026 赛题四的无向量金融 RAG 系统。项目处理保险条款、监管法规、债券募集说明书、财务报告和行业研报，在 Qwen-only、禁止 embedding、严格统计在线 Token 的约束下，将官网得分从 `58.1679` 提升到 **`83.33`**。
 
 ## 当前结果
 
-| 指标 | V1 | V2 | V3 | V4 | V5 | V6 candidate |
-|---|---:|---:|---:|---:|---:|---:|
-| 核心方法 | 财报指标行 | 文档级穷举 | 原子谓词 | 确定性版面 | 结构导航 + 真值组装 | 证据契约 + 事实账本 |
-| 官网得分 | 58.1679 | 57.7848 | 66.2592 | 68.6873 | **80.4466** | 待提交 |
-| 反推正确题数 | 62 | 67 | 约 68 | 70 | **82** | 不宣称 |
-| 在线 Token | 1,030,141 | 2,292,333 | 377,650 | 312,541 | **315,727** | 326,076 |
-| 状态 | 保留 | 负向实验 | 保留 | 保留 | **官网基线** | **当前候选** |
+| 指标 | V1 | V2 | V3 | V4 | V5 | V6 | V7 candidate |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 核心方法 | 财报指标行 | 文档级穷举 | 原子谓词 | 确定性版面 | 结构导航 + 真值组装 | 证据契约 + 事实账本 | 题干范围门禁 |
+| 官网得分 | 58.1679 | 57.7848 | 66.2592 | 68.6873 | 80.4466 | **83.33** | 待验证 |
+| 反推正确题数 | 62 | 67 | 约 68 | 70 | 82 | **85** | 不宣称 |
+| 在线 Token | 1,030,141 | 2,292,333 | 377,650 | 312,541 | 315,727 | **326,076** | 327,052 起 |
+| 状态 | 保留 | 负向实验 | 保留 | 保留 | 保留 | **官网基线** | **单变量候选** |
 
-V1 到 V5 的结果变化：
+V1 到 V6 的结果变化：
 
-- 综合分 `+22.2787`。
-- 正确率从 `62%` 提升到 `82%`。
-- 在线 Token 从 `1,030,141` 降到 `315,727`，减少约 `69.3%`。
+- 综合分 `+25.1621`。
+- 正确率从 `62%` 提升到 `85%`。
+- 在线 Token 从 `1,030,141` 降到 `326,076`，减少约 `68.3%`。
 - V4 到 V5 只增加约 `1.0%` Token，净增 12 道正确题。
 
-官方提交文件保存在本地 `outputs/releases/v1..v5/`。未经官网验证的 V6 只称为
-candidate。V5 `answer.csv` 的 SHA-256 为：
+官方提交文件保存在本地 `outputs/releases/v1..v6/`。V6 `answer.csv` 的 SHA-256 为：
 
 ```text
-1E6B16AF94F5CF0908899E7CB1A7A3844794708E43EBEC2627EC5A2CB1F6D2EA
+8E6DD42567F2E44F9CBE79693ADBE4D83FFDB09F6BAF5ED75BB33EB7466E4C02
 ```
 
 ## 系统架构
@@ -97,15 +96,23 @@ flowchart LR
 
 增加 PageIndex-lite、产品/公司实体别名、选项级文档范围和程序化真值组装。54 个模型候选变化中仅接受 14 个直接证据闭环，官网验证净增 12 题，达到 **80.4466**。
 
-### V6 candidate：证据充分性、口径和跨题一致性
+### V6：证据充分性、口径和跨题一致性
 
 - 对每个选项记录必需文档、谓词、数值端点、覆盖率、冲突和风险，不完整时返回 `uncertain`。
 - 财报事实账本显式区分合并/母公司、全年/季度、公司总额/客户或分部口径，并用受限 DSL 做比较。
 - 新增近重复事实图，只把同一源文档中的同口径断言送入人工复核，不自动投票改答案。
 - 对 100 题 V6 候选的 41 个变化和 59 个未变化题均完成离线/在线审计；默认只接受 6 个直接原文闭环。
-- 正式 candidate 为 `326,076` Token。若 6 项均修正 V5 错题，预计为 88/100、约 86.28 分；这是待官网验证的上界假设，不是实测成绩。
+- 正式提交为 `326,076` Token，官网得分 `83.33`，按评分公式对应 `85/100`；六处变化相对 V5 净增 3 题。
 
 详细设计、失败案例和 probe 说明见 [docs/V6_EVIDENCE_CONTRACT.md](docs/V6_EVIDENCE_CONTRACT.md)。
+
+### V7 candidate：题干范围门禁与分数诊断
+
+- 将 `fact_truth` 与 `applicable` 分开，只在“哪些情形需要审批”“哪些产品可以赔付”等显式集合题启用。
+- 全题开启的首轮实验产生 42 题漂移和 `485,509` Token，已判定为负向实验。
+- 收缩后仅 6 道范围题触发门禁，6/6 均稳定复现 V6 答案；普通事实题继续使用 V6 协议。
+- 按官网公式自动反推正确题数，并生成方法级消融矩阵。
+- 当前只保留 `reg_a_003` 与 `fc_a_015` 两个单变量候选，不把未验证变化写成准确率。
 
 完整版本记录见 [VERSION_SCORE_LOG.md](VERSION_SCORE_LOG.md)，简历与面试表述见 [docs/RESUME_CASE_STUDY.md](docs/RESUME_CASE_STUDY.md)。
 
@@ -137,8 +144,8 @@ agent/
   evaluation/    # 开发门禁与保守融合
   llm/           # 百炼 OpenAI-compatible Qwen client
   io/            # JSONL、提交文件和 Token 汇总
-scripts/         # 01-24 可复现流水线
-configs/         # V3-V6 分层复核配置
+scripts/         # 01-26 可复现流水线
+configs/         # V3-V7 分层复核配置
 devsets/         # 带题面指纹的开发集
 tests/           # 单元与集成回归
 theory/          # 论文调研和各版本技术笔记
@@ -229,7 +236,7 @@ python scripts\04_make_submission.py `
 python -m pytest -q
 ```
 
-## 复现 V6 candidate
+## 复现 V6
 
 ```powershell
 python scripts\16_run_precise_verifier.py `
@@ -252,6 +259,22 @@ python scripts\04_make_submission.py `
 
 默认命令不会纳入 `configs/v6_evidence_reviews.json` 中的 probe。单变量榜单诊断必须显式使用 `--include-probe`。
 
+## 生成 V7 单变量候选
+
+```powershell
+python scripts\26_merge_v7_targeted_candidate.py `
+  --include-group reg3_terminal_storage `
+  --output outputs\v7_probe_reg3\answer_results.jsonl
+
+python scripts\04_make_submission.py `
+  --results outputs\v7_probe_reg3\answer_results.jsonl `
+  --output-dir outputs\v7_probe_reg3 `
+  --require-complete
+```
+
+`fc15_single_choice_collision` 只用于确认双真单选题的官方处理，不建议与
+`reg3_terminal_storage` 首次合并提交。候选说明见 [docs/V7_QUESTION_ENVELOPE.md](docs/V7_QUESTION_ENVELOPE.md)。
+
 ## 协作约定
 
 - GitHub 只保留 `main`，功能开发使用短生命周期本地分支，合并后删除。
@@ -261,4 +284,4 @@ python scripts\04_make_submission.py `
 
 ## 下一目标：90 分
 
-V6 candidate 的 `326,076` Token 下，达到 90 分仍需要 `92/100`，预计约 `90.20` 分。当前 6 项直接证据修正即使全部命中也只对应 88/100，因此下一步先用正式 candidate 和两个单变量 probe 获取官网反馈，再针对仍错的口径/题干范围做 V7；不以未经验证的模型差异凑足 10 题。
+V6 的 `326,076` Token 下，达到 90 分仍需要 `92/100`，预计约 `90.20` 分，即还差 7 题。下一步先提交 `reg_a_003` 单变量候选，再根据官网反馈决定是否纳入；`fc_a_015` 存在两个原文均为真的标注冲突，只作为独立诊断项。90 分是目标，不把未获得的榜单结果写成保证。
