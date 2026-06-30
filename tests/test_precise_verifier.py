@@ -148,6 +148,79 @@ def test_precise_verifier_structure_navigation_is_additive():
     assert any(item.source.endswith(":mixed") for item in candidates)
 
 
+def test_precise_verifier_literal_scan_recovers_near_match_wording():
+    chunks = [
+        _chunk(
+            "true",
+            "doc_a",
+            "违约金具体计算方式为延迟支付的本金和利息乘以票面利率。",
+        ),
+        _chunk("noise", "doc_a", "发行人应当按时支付债券本金。"),
+    ]
+    question = Question(
+        qid="fc_test",
+        domain="financial_contracts",
+        split="a",
+        question="关于违约责任，哪些说法正确？",
+        options={"A": "违约利息计算基数包含本金和利息"},
+        answer_format="multi",
+        doc_ids=["doc_a"],
+    )
+    verifier = PreciseVerifier(
+        BM25SearchIndex.build(chunks),
+        _FakeLLM(),
+        PreciseVerifierConfig(enable_literal_option_scan=True),
+    )
+    claim = build_claim_targets(question)[0]
+
+    candidates = verifier._collect_claim_candidates(
+        question,
+        claim,
+        ["违约利息"],
+    )
+
+    literal = [
+        item for item in candidates if "literal_option_scan" in item.source
+    ]
+    assert literal
+    assert "本金和利息" in literal[0].evidence_text
+
+
+def test_precise_verifier_literal_scan_uses_tf_proposition_not_answer_labels():
+    question = Question(
+        qid="tf_literal",
+        domain="regulatory",
+        split="a",
+        question="该规定自2026年1月1日起施行。",
+        options={"A": "正确", "B": "错误"},
+        answer_format="tf",
+        doc_ids=["doc_a"],
+    )
+    verifier = PreciseVerifier(
+        BM25SearchIndex.build(
+            [
+                _chunk("true", "doc_a", "本规定自2026年1月1日起施行。"),
+                _chunk("noise", "doc_a", "申请材料应当真实、准确、完整。"),
+            ]
+        ),
+        _FakeLLM(),
+        PreciseVerifierConfig(enable_literal_option_scan=True),
+    )
+
+    candidates = verifier._collect_claim_candidates(
+        question,
+        build_claim_targets(question)[0],
+        ["施行"],
+    )
+    literal = [
+        item for item in candidates if "literal_option_scan" in item.source
+    ]
+
+    assert literal
+    assert literal[0].query == question.question
+    assert "2026年1月1日" in literal[0].evidence_text
+
+
 def test_grouped_context_exposes_business_document_label():
     question = Question(
         qid="ins-test",

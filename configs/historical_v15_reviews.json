@@ -1,0 +1,27 @@
+{
+  "res_a_004": {
+    "answer": "ABC",
+    "decision": "historical_official_submission",
+    "reason": "旧 V15 相对当前 V4 底稿的五项答案变化之一。"
+  },
+  "res_a_011": {
+    "answer": "BC",
+    "decision": "historical_official_submission",
+    "reason": "旧 V15 相对当前 V4 底稿的五项答案变化之一。"
+  },
+  "res_a_017": {
+    "answer": "AB",
+    "decision": "historical_official_submission",
+    "reason": "旧 V15 相对当前 V4 底稿的五项答案变化之一。"
+  },
+  "res_a_018": {
+    "answer": "B",
+    "decision": "historical_official_submission",
+    "reason": "旧 V15 相对当前 V4 底稿的五项答案变化之一。"
+  },
+  "fin_a_016": {
+    "answer": "AD",
+    "decision": "historical_official_submission",
+    "reason": "旧 V15 相对当前 V4 底稿的五项答案变化之一。"
+  }
+}

@@ -50,10 +50,12 @@ class PreciseVerifierConfig:
     enable_evidence_contract: bool = False
     enable_numeric_verifier: bool = False
     enable_question_envelope: bool = False
+    enable_literal_option_scan: bool = False
     assemble_answer_from_checks: bool = False
     navigation_nodes_per_doc: int = 3
     navigation_candidates_per_doc: int = 10
     navigation_page_radius: int = 1
+    literal_scan_per_doc: int = 8
     strategy_name: str = "v3_atomic_precise"
     search_chunk_types: tuple[str, ...] = (
         "atomic_text",
@@ -265,7 +267,87 @@ class PreciseVerifier:
         )
         scanned = self._predicate_document_scan(claim, predicates, doc_scope)
         navigated = self._structure_navigation_candidates(question, claim, predicates, doc_scope)
-        return _dedupe_results([*navigated, *scanned, *fused])
+        literal = self._literal_option_scan(
+            question,
+            claim,
+            predicates,
+            doc_scope,
+        )
+        return _dedupe_results([*literal, *navigated, *scanned, *fused])
+
+    def _literal_option_scan(
+        self,
+        question: Question,
+        claim: ClaimTarget,
+        predicates: list[str],
+        doc_scope: list[str],
+    ) -> list[RetrievalResult]:
+        """按选项字面片段全量扫描文档，补回被查询改写遗漏的原句。"""
+        if not self.config.enable_literal_option_scan:
+            return []
+        allowed_types = set(self.config.search_chunk_types)
+        # 判断题的选项通常只有“正确/错误”，真正需要在原文定位的是题干命题。
+        literal_text = question.question if _is_binary_tf(question) else claim.option_text
+        option_grams = _char_ngrams(literal_text)
+        anchors = list(
+            dict.fromkeys(
+                term
+                for term in [
+                    *predicates,
+                    *extract_candidate_values(claim),
+                    *extract_query_entities(
+                        literal_text
+                    ),
+                ]
+                if _compact(term)
+            )
+        )
+        output: list[RetrievalResult] = []
+        for doc_id in doc_scope:
+            scored: list[tuple[float, int, int, Chunk]] = []
+            for chunk in self.index.doc_chunks_ordered.get(doc_id, []):
+                if str(chunk.metadata.get("chunk_type", "text")) not in allowed_types:
+                    continue
+                compact_text = _compact(chunk.text)
+                if not compact_text:
+                    continue
+                text_grams = _char_ngrams(compact_text)
+                overlap = len(option_grams & text_grams)
+                anchor_hits = sum(
+                    1 for anchor in anchors if _compact(anchor) in compact_text
+                )
+                value_hits = sum(
+                    1
+                    for value in extract_candidate_values(claim)
+                    if _compact(value) in compact_text
+                )
+                if overlap < 3 and anchor_hits == 0:
+                    continue
+                coverage = overlap / max(1, len(option_grams))
+                score = (
+                    coverage * 5.0
+                    + anchor_hits * 1.4
+                    + value_hits * 1.8
+                )
+                scored.append((score, overlap, anchor_hits, chunk))
+            scored.sort(key=lambda row: (-row[0], -row[1], row[3].chunk_id))
+            for score, overlap, anchor_hits, chunk in scored[
+                : self.config.literal_scan_per_doc
+            ]:
+                result = self.index.result_from_chunk(
+                    chunk,
+                    score=0.5 + min(0.45, score * 0.025),
+                    source=(
+                        f"{self.config.strategy_name}:"
+                        f"{claim.option_key}:literal_option_scan"
+                    ),
+                    query=literal_text,
+                )
+                result.metadata["literal_ngram_overlap"] = overlap
+                result.metadata["literal_anchor_hits"] = anchor_hits
+                result.metadata["literal_scan_score"] = round(score, 6)
+                output.append(result)
+        return output
 
     def _structure_navigation_candidates(
         self,
@@ -668,6 +750,17 @@ def _parent_window(parent_text: str, child_text: str, max_chars: int) -> str:
     left = max(0, start - max_chars // 3)
     right = min(len(parent_text), left + max_chars)
     return parent_text[left:right]
+
+
+def _char_ngrams(text: str, size: int = 2) -> set[str]:
+    """提取去空白标点后的字符片段，兼容中文条款和英文缩写。"""
+    compact = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", str(text)).casefold()
+    if len(compact) <= size:
+        return {compact} if compact else set()
+    return {
+        compact[index : index + size]
+        for index in range(len(compact) - size + 1)
+    }
 
 
 def _dedupe_results(items: list[RetrievalResult]) -> list[RetrievalResult]:

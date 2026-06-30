@@ -1,25 +1,26 @@
 # AFAC2026 金融长文本 Agent
 
-面向 AFAC2026 赛题四的无向量金融 RAG 系统。项目处理保险条款、监管法规、债券募集说明书、财务报告和行业研报，在 Qwen-only、禁止 embedding、严格统计在线 Token 的约束下，将官网得分从 `58.1679` 提升到 **`84.3124`**。
+面向 AFAC2026 赛题四的无向量金融 RAG 系统。项目处理保险条款、监管法规、债券募集说明书、财务报告和行业研报，在 Qwen-only、禁止 embedding、严格统计在线 Token 的约束下，将官网得分从 `58.1679` 提升到 **`86.2732`**。V10 正在用 V9 官网反馈、条件化整数约束和原文残差复核继续提分，未经提交不将推断正确率写成实测成绩。
 
 ## 当前结果
 
-| 指标 | V1 | V2 | V3 | V4 | V5 | V6 | V7 | V8 candidate |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| 核心方法 | 财报指标行 | 文档级穷举 | 原子谓词 | 确定性版面 | 结构导航 + 真值组装 | 证据契约 + 事实账本 | 题干范围门禁 | 显式蕴含门禁 |
-| 官网得分 | 58.1679 | 57.7848 | 66.2592 | 68.6873 | 80.4466 | 83.33 | **84.3124** | 待验证 |
-| 反推正确题数 | 62 | 67 | 约 68 | 70 | 82 | 85 | **86** | 不宣称 |
-| 在线 Token | 1,030,141 | 2,292,333 | 377,650 | 312,541 | 315,727 | 326,076 | **327,052** | 328,445 |
-| 状态 | 保留 | 负向实验 | 保留 | 保留 | 保留 | 保留 | **官网基线** | **当前候选** |
+| 指标 | V1 | V2 | V3 | V4 | V5 | V6 | V7 | V8 | V9 | V10 candidate |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 核心方法 | 财报指标行 | 文档级穷举 | 原子谓词 | 确定性版面 | 结构导航 + 真值组装 | 证据契约 + 事实账本 | 题干范围门禁 | 显式蕴含门禁 | 官网约束 + 残差审计 | 分差反演 + 条件化约束 |
+| 官网得分 | 58.1679 | 57.7848 | 66.2592 | 68.6873 | 80.4466 | 83.33 | 84.3124 | 83.3249 | **86.2732** | 待提交 |
+| 反推正确题数 | 62 | 67 | 约 68 | 70 | 82 | 85 | 86 | 85 | **88** | 推断 90 |
+| 在线 Token | 1,030,141 | 2,292,333 | 377,650 | 312,541 | 315,727 | 326,076 | 327,052 | 328,445 | **327,052** | 327,052 |
+| 状态 | 保留 | 负向实验 | 保留 | 保留 | 保留 | 保留 | 保留 | 已证伪 | **官网基线** | **当前候选** |
 
-V1 到 V7 的结果变化：
+V1 到 V9 的结果变化：
 
-- 综合分 `+26.1445`。
-- 正确率从 `62%` 提升到 `86%`。
+- 综合分 `+28.1053`。
+- 正确率从 `62%` 提升到 `88%`。
 - 在线 Token 从 `1,030,141` 降到 `327,052`，减少约 `68.3%`。
 - V4 到 V5 只增加约 `1.0%` Token，净增 12 道正确题。
 
-官方提交文件保存在本地 `outputs/releases/v1..v7/`。V7 `answer.csv` 的 SHA-256 为：
+已发布快照保存在本地 `outputs/releases/`，后续诊断运行保存在各版本输出目录。V7
+`answer.csv` 的 SHA-256 为：
 
 ```text
 490F4A3226702CEC346919D7C432B70B913FDDF018A481226DC070ED4C7D3287
@@ -48,6 +49,8 @@ flowchart LR
     G --> FL["数值事实账本 + 受限计算"]
     FL --> H
     H --> I["确定性答案组装"]
+    O["历次官网答案 + 正确题数"] --> LC["0-1 整数约束"]
+    LC --> J
     I --> J["直接原文复核白名单"]
     J --> K["answer.csv + evidence.json + token_usage.json"]
 ```
@@ -74,7 +77,7 @@ flowchart LR
    - 多选答案由 `true` 选项确定性组装，`uncertain` 不自动入选。
    - 候选答案默认回退上一官方版本，只有带原文依据的复核配置可以改答案。
 
-## 五版迭代
+## 版本迭代
 
 ### V1：财报指标行与答案门禁
 
@@ -114,11 +117,29 @@ flowchart LR
 - 按官网公式自动反推正确题数，并生成方法级消融矩阵。
 - `reg_a_003: B -> A` 获官网验证，`327,052` Token 对应 `86/100` 和 `84.3124` 分。
 
-### V8 candidate：显式蕴含优先
+### V8：显式蕴含门禁，已证伪
 
 - 否定、缺失和“不涵盖”类选项必须有直接条款，不能仅由产品类型或文档未提及推出。
-- 当前候选只修改 `ins_a_008: ABC -> AC`；两个独立长上下文裁决均排除 B，但尚未获得官网成绩。
-- `fc_a_015` 存在双真单选冲突，继续保留为独立诊断，不混入首个 V8 提交。
+- 唯一修改 `ins_a_008: ABC -> AC`，官网从 86 题正确降为 85 题，证明该选项应保留为 `ABC`。
+- 结论：模型一致和“文档未提及”均不能替代标准答案；显式蕴含门禁只用于审计，不直接覆盖基线。
+
+### V9：官网整数约束与残差复核
+
+- 将历次官网正确题数写成 0-1 整数约束，先排除不可能答案；约束证明 `fc_a_014=B` 必错。
+- 修复判断题字面扫描使用“正确/错误”而非题干命题的召回缺陷，并过滤空锚点误命中。
+- `target90` 相对 V7 共 6 处变化，官网 `86.2732`，对应 `88/100`。
+- 六题净增 2，若真实标签只取新旧答案，则恰有 4 个增益、2 个回归。
+- 联合可行只能排除数学矛盾，不能证明候选答案正确。
+
+### V10 candidate：条件化分差反演
+
+- 枚举 V9 的四增二减模式，并以原文和 V2→V7 连续净变化方程排序。
+- 保留 `fc_a_014`、`reg_a_004`、`res_a_003`、`res_a_011`，撤销 V9 的
+  `fc_a_012`、`fc_a_015`。
+- 固定四个标签后，历史方程额外强制保护 24 道当前答案，共 28 道必对题。
+- 深证据全量实验使用 `783,244` Token 产生 25 个反转，其中多项与强制正确答案冲突，
+  证明扩大上下文不能作为自动覆盖规则。
+- V10 若分差模式判断正确则为 `90/100`、理论综合分 `88.233919`，当前仍待官网验证。
 
 完整版本记录见 [VERSION_SCORE_LOG.md](VERSION_SCORE_LOG.md)，简历与面试表述见 [docs/RESUME_CASE_STUDY.md](docs/RESUME_CASE_STUDY.md)。
 
@@ -131,8 +152,10 @@ flowchart LR
 | SURE-RAG 式充分性聚合 | 部分采用 | 迁移 coverage/conflict/uncertainty 思想，以确定性证据契约实现 |
 | H-STAR 式表格混合推理 | 部分采用 | 先恢复列/行和口径，再由受限 DSL 执行数值比较 |
 | ChainRAG/FunnelRAG 式渐进检索 | 部分采用 | 只在缺失谓词或数值端点时补检索，不启用无限多轮 Agent |
+| 官网总分 0-1 整数约束 | 是 | 用完整提交和整数正确题数排除不可能标签，并执行联合可行性门禁 |
 | GraphRAG / LightRAG | 否 | A 榜已有候选 `doc_ids`，问题多为局部条款和表格事实；全局图构建成本高且收益不确定 |
 | 全题 LogicRAG / PoT / LLM Judge | 否 | 实验中产生 52 题答案漂移，Token 从 31 万增至 63 万 |
+| 全题 30K 深证据上下文 | 否 | 783,244 Token 产生 25 个反转，多项违反官网强制正确约束 |
 | 全量 OCR / VLM | 否 | 主要 PDF 有文字层；确定性坐标解析更便于复现，旧视觉候选官网净损失 |
 | embedding / 向量数据库 | 否 | 赛题明确禁止 |
 | 非 Qwen reranker 或小模型 | 否 | 赛题限制在线模型为 Qwen 系列 |
@@ -150,8 +173,8 @@ agent/
   evaluation/    # 开发门禁与保守融合
   llm/           # 百炼 OpenAI-compatible Qwen client
   io/            # JSONL、提交文件和 Token 汇总
-scripts/         # 01-28 可复现流水线
-configs/         # V3-V8 分层复核配置
+scripts/         # 01-34 可复现流水线
+configs/         # V3-V10 分层复核配置
 devsets/         # 带题面指纹的开发集
 tests/           # 单元与集成回归
 theory/          # 论文调研和各版本技术笔记
@@ -281,7 +304,7 @@ python scripts\04_make_submission.py `
 `fc15_single_choice_collision` 只用于确认双真单选题的官方处理，不建议与
 `reg3_terminal_storage` 首次合并提交。候选说明见 [docs/V7_QUESTION_ENVELOPE.md](docs/V7_QUESTION_ENVELOPE.md)。
 
-## 生成 V8 候选
+## 复现 V8 负向实验
 
 ```powershell
 python scripts\27_merge_v8_candidate.py `
@@ -294,8 +317,8 @@ python scripts\04_make_submission.py `
   --require-complete
 ```
 
-提交文件为 `outputs/v8_ins8_candidate/answer.csv`，唯一变化是
-`ins_a_008: ABC -> AC`。设计依据见 [docs/V8_EXPLICIT_ENTAILMENT.md](docs/V8_EXPLICIT_ENTAILMENT.md)。
+唯一变化是 `ins_a_008: ABC -> AC`。该提交官网为 `83.3249`、85/100，
+低于 V7，不应再次提交。复盘见 [docs/V8_EXPLICIT_ENTAILMENT.md](docs/V8_EXPLICIT_ENTAILMENT.md)。
 
 V8 同时提供选项级多运行共识审计：
 
@@ -311,7 +334,31 @@ python scripts\28_audit_option_consensus.py `
 ```
 
 该报告只列出待复核候选，不自动修改答案。现有九个一致翻转中，八个已被直接原文否决；
-只保留 `ins_a_008` 进入首个单变量提交。
+当时只保留 `ins_a_008` 进入首个单变量提交；官网结果已证明该共识翻转错误。
+
+## 生成 V10 候选
+
+```powershell
+python scripts\31_build_residual_candidate.py `
+  --config configs\v10_inferred_reviews.json `
+  --profile inferred90 `
+  --output outputs\v10_inferred90\answer_results.jsonl
+
+python scripts\04_make_submission.py `
+  --results outputs\v10_inferred90\answer_results.jsonl `
+  --output-dir outputs\v10_inferred90 `
+  --require-complete
+```
+
+下一份保守提交为 `outputs/v10_inferred90/answer.csv`，SHA-256：
+
+```text
+4DD820F71F868866E224A79CC5901E9165EF2919BF1CB04D83065D3D7D92A8B0
+```
+
+V9 反馈和 V10 分差反演见
+[docs/V9_CONSTRAINED_RESIDUALS.md](docs/V9_CONSTRAINED_RESIDUALS.md)、
+[docs/V10_CONDITIONED_CONSTRAINTS.md](docs/V10_CONDITIONED_CONSTRAINTS.md)。
 
 ## 协作约定
 
@@ -320,6 +367,9 @@ python scripts\28_audit_option_consensus.py `
 - 每次修改检索或压缩策略必须记录答案差异、Token 差异和直接证据。
 - 未经官网验证的结果只能称为 candidate，不写成官方准确率。
 
-## 下一目标：95 分
+## 下一目标：先 90，再 95
 
-当前约 33 万 Token 下，综合分达到 95 至少需要 `97/100`，即相对 V7 再净增 11 题。达到该门槛前，主线只接受可审计的证据、推理和发布门禁改进；跨模型、B 榜无 `doc_ids`、embedding 和跨语料重构记录在 [核心开发计划](docs/CORE_DEVELOPMENT_PLAN.md)，达到 95 后实施。
+当前约 33 万 Token 下，综合分达到 90 至少需要 `92/100`，达到 95 至少需要
+`97/100`。先验证 V10 的推断 `90/100` 基线，再从剩余未决题中获得至少 2 个
+直接原文纠错。跨模型、B 榜无 `doc_ids`、embedding 和跨语料重构记录在
+[核心开发计划](docs/CORE_DEVELOPMENT_PLAN.md)，达到当前赛题门槛后实施。

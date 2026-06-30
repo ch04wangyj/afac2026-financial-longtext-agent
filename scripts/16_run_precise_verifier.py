@@ -33,6 +33,11 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--max-context-chars", type=int, default=12_000)
+    parser.add_argument("--top-k-per-query", type=int, default=12)
+    parser.add_argument("--fused-top-k-per-claim", type=int, default=48)
+    parser.add_argument("--predicate-scan-per-doc", type=int, default=8)
+    parser.add_argument("--evidence-per-claim", type=int, default=4)
+    parser.add_argument("--literal-scan-per-doc", type=int, default=8)
     parser.add_argument("--strategy-name", default="v3_atomic_precise")
     parser.add_argument(
         "--structure-navigation",
@@ -59,6 +64,11 @@ def main() -> None:
         action="store_true",
         help="启用 V7 题干范围契约；仅对显式集合问题拆分事实真值与适用性。",
     )
+    parser.add_argument(
+        "--literal-option-scan",
+        action="store_true",
+        help="启用 V9 选项字面片段全量扫描，补回查询改写遗漏的原句。",
+    )
     args = parser.parse_args()
 
     os.environ["AFAC_QWEN_MODEL"] = args.model
@@ -73,6 +83,11 @@ def main() -> None:
         BM25SearchIndex.load(index_path),
         QwenClient(settings, dry_run=args.dry_run),
         PreciseVerifierConfig(
+            top_k_per_query=max(1, args.top_k_per_query),
+            fused_top_k_per_claim=max(1, args.fused_top_k_per_claim),
+            predicate_scan_per_doc=max(1, args.predicate_scan_per_doc),
+            evidence_per_claim=max(1, args.evidence_per_claim),
+            literal_scan_per_doc=max(1, args.literal_scan_per_doc),
             audit_enabled=args.audit,
             enable_thinking=not args.no_thinking,
             max_context_chars=args.max_context_chars,
@@ -81,6 +96,7 @@ def main() -> None:
             enable_evidence_contract=args.evidence_contract,
             enable_numeric_verifier=args.numeric_verifier,
             enable_question_envelope=args.question_envelope,
+            enable_literal_option_scan=args.literal_option_scan,
             assemble_answer_from_checks=args.assemble_from_checks,
         ),
     )

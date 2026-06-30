@@ -1,0 +1,51 @@
+{
+  "profiles": {
+    "core": {
+      "description": "V8 回归后，由官网分差约束、跨题一致性和原文复核共同支持的五处残差修正。",
+      "reviews": {
+        "fc_a_012": {
+          "answer": "ACD",
+          "decision": "cross_question_literal_consistency",
+          "confidence": "high",
+          "reason": "text03 第175页明确给出延迟支付的本金和利息乘票面利率乘150%的违约金公式；同一事实已在 fc_a_008 中按违约赔偿公式判真，D 不应因“违约利息/违约金”的简称差异被排除。"
+        },
+        "fc_a_014": {
+          "answer": "AB",
+          "decision": "leaderboard_forced_wrong_and_direct_source",
+          "confidence": "very_high",
+          "reason": "多版本官网正确题数约束证明当前 B 不可能正确；text03 第175页直接支持 A，text08 第259页直接支持 B。"
+        },
+        "reg_a_004": {
+          "answer": "AC",
+          "decision": "version_delta_residual_and_scope_condition",
+          "confidence": "medium_high",
+          "reason": "A、C 均有直接时限条款。B 省略了“备案信息不准确导致重大差异”的必要前提；联立 V5 到 V6 的六处变化与净增三题后，该变化是唯一可解释的中性残差。"
+        },
+        "res_a_003": {
+          "answer": "A",
+          "decision": "deterministic_numeric_comparison",
+          "confidence": "high",
+          "reason": "韩国寿险银保渠道近20年复合增速为12%；远望谷报告给出的全球超高频RFID标签出货复合增速为14.1%，新兴细分赛道为20%至50%，因此前者更低。"
+        },
+        "res_a_011": {
+          "answer": "ABC",
+          "decision": "version_delta_residual_and_direct_source",
+          "confidence": "high",
+          "reason": "pack2_text10 第7页直接写明相关杠杆从1.56倍升至4.09倍、自有资产净利率从4.3%降至1.8%；pack2_text02 支持超过1000条规则。该修正同时使 V2→V4、V4→V5 和 V5→V6 的官网净变化方程一致。"
+        }
+      }
+    },
+    "target90": {
+      "extends": "core",
+      "description": "在 core 上加入一个单选双真标签冲突，用于冲击 92/100 和约 90.19 综合分。",
+      "reviews": {
+        "fc_a_015": {
+          "answer": "B",
+          "decision": "single_choice_annotation_collision",
+          "confidence": "medium",
+          "reason": "text14 首页逐字给出注册金额不超过（含）180亿元；题面为单选但 A 也有原文支持，因此 B 是需要官网裁决的标签冲突，不宣称为已验证答案。"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "profiles": {
+    "inferred90": {
+      "description": "根据 V9 官网 88/100 反馈反演得到的高概率 90/100 基线；结论来自总分约束，不等同于逐题官网标签。",
+      "reviews": {
+        "fc_a_014": {
+          "answer": "AB",
+          "decision": "leaderboard_delta_pattern_and_direct_source",
+          "confidence": "very_high",
+          "reason": "V7 的 B 已被历史官网约束证明不可能正确；text03 与 text08 分别直接支持 A、B。"
+        },
+        "reg_a_004": {
+          "answer": "AC",
+          "decision": "leaderboard_delta_pattern_and_condition_scope",
+          "confidence": "high",
+          "reason": "A、C 是直接时限条款；B 省略“备案信息不准确导致重大差异”的必要前提。"
+        },
+        "res_a_003": {
+          "answer": "A",
+          "decision": "leaderboard_delta_pattern_and_numeric_comparison",
+          "confidence": "very_high",
+          "reason": "韩国寿险银保渠道近20年复合增速12%，低于对照报告中的14.1%及20%至50%。"
+        },
+        "res_a_011": {
+          "answer": "ABC",
+          "decision": "leaderboard_delta_pattern_and_direct_source",
+          "confidence": "high",
+          "reason": "原文直接支持超过1000条规则、杠杆从1.56倍升至4.09倍、自有资产净利率从4.3%降至1.8%。"
+        }
+      }
+    }
+  }
+}
