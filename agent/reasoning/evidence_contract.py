@@ -19,7 +19,19 @@ from agent.schemas import Question, RetrievalResult
 
 UNIVERSAL_MARKERS = ("均", "全部", "所有", "两份", "各自", "分别", "同时")
 COMPARISON_MARKERS = ("高于", "低于", "超过", "少于", "早于", "晚于", "一致", "不一致", "同比")
-ABSENCE_MARKERS = ("未提及", "未披露", "未说明", "没有", "无任何", "未出现", "均未", "不包含")
+ABSENCE_MARKERS = (
+    "未提及",
+    "未披露",
+    "未说明",
+    "没有",
+    "无任何",
+    "未出现",
+    "均未",
+    "不包含",
+    "不涵盖",
+    "不赔",
+    "无免赔额",
+)
 NEGATION_MARKERS = ("不得", "不能", "不可以", "不属于", "不包括", "除外", "无需", "无权")
 COMPOUND_MARKERS = ("且", "并且", "以及", "同时", "分别", "；", ";")
 FINANCIAL_SCOPE_MARKERS = (

@@ -70,6 +70,17 @@ def test_contract_flags_absence_and_financial_scope_ambiguity():
     assert contracts["A"].needs_review is True
 
 
+def test_contract_flags_insurance_coverage_and_deductible_absence_claims():
+    for option in ("重疾险不涵盖院外药品费用", "重疾险无免赔额"):
+        contracts = build_evidence_contracts(
+            _question(option),
+            [_evidence("doc_a", "重大疾病保险金按基本保险金额给付。")],
+        )
+
+        assert "absence_claim" in contracts["A"].risk_tags
+        assert contracts["A"].needs_review is True
+
+
 def test_contract_does_not_treat_attributable_profit_wording_as_parent_scope():
     question = _question("两家公司归属于上市公司股东的净利润均增长")
     contracts = build_evidence_contracts(

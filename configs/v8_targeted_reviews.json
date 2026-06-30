@@ -1,0 +1,51 @@
+{
+  "groups": {
+    "ins8_explicit_coverage": {
+      "candidate_result": "outputs/v6_full_candidate/answer_results.jsonl",
+      "reviews": {
+        "ins_a_008": {
+          "answer": "AC",
+          "decision": "explicit_entailment_candidate",
+          "confidence": "high_unverified",
+          "reason": "A、C 均有特定药品、处方审核和指定药店的直接条款；B 仅因安佑福属于给付型重疾险而推断“不涵盖”，对应文档未出现院外特定药品费用谓词。两个独立长上下文裁决均排除 B。",
+          "source_refs": [
+            "insurance_3:特定药品费用医疗保险金",
+            "insurance_5:2.2.9 院外恶性肿瘤特定药品费用医疗保险金",
+            "insurance_4:未出现特定药品费用责任"
+          ]
+        }
+      }
+    },
+    "ins18_explicit_deductible": {
+      "candidate_result": "outputs/v6_full_candidate/answer_results.jsonl",
+      "reviews": {
+        "ins_a_018": {
+          "answer": "BC",
+          "decision": "explicit_entailment_probe",
+          "confidence": "medium_unverified",
+          "reason": "B、C 有免赔额抵扣的直接条款；D 仅由安佑福属于给付型重疾险而推断“无免赔额”，对应文档未出现免赔额谓词。该项只在 ins_a_008 得分确认后单独验证。",
+          "source_refs": [
+            "insurance_5:2.2.2 免赔额",
+            "insurance_6:2.5 免赔额",
+            "insurance_4:未出现免赔额条款"
+          ]
+        }
+      }
+    },
+    "fc15_single_choice_collision": {
+      "candidate_result": "outputs/v6_probe_fc15/answer_results.jsonl",
+      "reviews": {
+        "fc_a_015": {
+          "answer": "B",
+          "decision": "annotation_collision_candidate",
+          "confidence": "ambiguous",
+          "reason": "text03 的主体评级 AAA 与 text14 的注册金额不超过 180 亿元均有直接原文，题面却声明单选。该组只用于确认官方标签，不与首个 V8 候选默认合并。",
+          "source_refs": [
+            "text03:主体评级 AAA",
+            "text14:p1:注册金额不超过 180 亿元"
+          ]
+        }
+      }
+    }
+  }
+}

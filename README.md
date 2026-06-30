@@ -1,28 +1,28 @@
 # AFAC2026 金融长文本 Agent
 
-面向 AFAC2026 赛题四的无向量金融 RAG 系统。项目处理保险条款、监管法规、债券募集说明书、财务报告和行业研报，在 Qwen-only、禁止 embedding、严格统计在线 Token 的约束下，将官网得分从 `58.1679` 提升到 **`83.33`**。
+面向 AFAC2026 赛题四的无向量金融 RAG 系统。项目处理保险条款、监管法规、债券募集说明书、财务报告和行业研报，在 Qwen-only、禁止 embedding、严格统计在线 Token 的约束下，将官网得分从 `58.1679` 提升到 **`84.3124`**。
 
 ## 当前结果
 
-| 指标 | V1 | V2 | V3 | V4 | V5 | V6 | V7 candidate |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| 核心方法 | 财报指标行 | 文档级穷举 | 原子谓词 | 确定性版面 | 结构导航 + 真值组装 | 证据契约 + 事实账本 | 题干范围门禁 |
-| 官网得分 | 58.1679 | 57.7848 | 66.2592 | 68.6873 | 80.4466 | **83.33** | 待验证 |
-| 反推正确题数 | 62 | 67 | 约 68 | 70 | 82 | **85** | 不宣称 |
-| 在线 Token | 1,030,141 | 2,292,333 | 377,650 | 312,541 | 315,727 | **326,076** | 327,052 起 |
-| 状态 | 保留 | 负向实验 | 保留 | 保留 | 保留 | **官网基线** | **单变量候选** |
+| 指标 | V1 | V2 | V3 | V4 | V5 | V6 | V7 | V8 candidate |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 核心方法 | 财报指标行 | 文档级穷举 | 原子谓词 | 确定性版面 | 结构导航 + 真值组装 | 证据契约 + 事实账本 | 题干范围门禁 | 显式蕴含门禁 |
+| 官网得分 | 58.1679 | 57.7848 | 66.2592 | 68.6873 | 80.4466 | 83.33 | **84.3124** | 待验证 |
+| 反推正确题数 | 62 | 67 | 约 68 | 70 | 82 | 85 | **86** | 不宣称 |
+| 在线 Token | 1,030,141 | 2,292,333 | 377,650 | 312,541 | 315,727 | 326,076 | **327,052** | 328,445 |
+| 状态 | 保留 | 负向实验 | 保留 | 保留 | 保留 | 保留 | **官网基线** | **当前候选** |
 
-V1 到 V6 的结果变化：
+V1 到 V7 的结果变化：
 
-- 综合分 `+25.1621`。
-- 正确率从 `62%` 提升到 `85%`。
-- 在线 Token 从 `1,030,141` 降到 `326,076`，减少约 `68.3%`。
+- 综合分 `+26.1445`。
+- 正确率从 `62%` 提升到 `86%`。
+- 在线 Token 从 `1,030,141` 降到 `327,052`，减少约 `68.3%`。
 - V4 到 V5 只增加约 `1.0%` Token，净增 12 道正确题。
 
-官方提交文件保存在本地 `outputs/releases/v1..v6/`。V6 `answer.csv` 的 SHA-256 为：
+官方提交文件保存在本地 `outputs/releases/v1..v7/`。V7 `answer.csv` 的 SHA-256 为：
 
 ```text
-8E6DD42567F2E44F9CBE79693ADBE4D83FFDB09F6BAF5ED75BB33EB7466E4C02
+490F4A3226702CEC346919D7C432B70B913FDDF018A481226DC070ED4C7D3287
 ```
 
 ## 系统架构
@@ -106,13 +106,19 @@ flowchart LR
 
 详细设计、失败案例和 probe 说明见 [docs/V6_EVIDENCE_CONTRACT.md](docs/V6_EVIDENCE_CONTRACT.md)。
 
-### V7 candidate：题干范围门禁与分数诊断
+### V7：题干范围门禁与分数诊断
 
 - 将 `fact_truth` 与 `applicable` 分开，只在“哪些情形需要审批”“哪些产品可以赔付”等显式集合题启用。
 - 全题开启的首轮实验产生 42 题漂移和 `485,509` Token，已判定为负向实验。
 - 收缩后仅 6 道范围题触发门禁，6/6 均稳定复现 V6 答案；普通事实题继续使用 V6 协议。
 - 按官网公式自动反推正确题数，并生成方法级消融矩阵。
-- 当前只保留 `reg_a_003` 与 `fc_a_015` 两个单变量候选，不把未验证变化写成准确率。
+- `reg_a_003: B -> A` 获官网验证，`327,052` Token 对应 `86/100` 和 `84.3124` 分。
+
+### V8 candidate：显式蕴含优先
+
+- 否定、缺失和“不涵盖”类选项必须有直接条款，不能仅由产品类型或文档未提及推出。
+- 当前候选只修改 `ins_a_008: ABC -> AC`；两个独立长上下文裁决均排除 B，但尚未获得官网成绩。
+- `fc_a_015` 存在双真单选冲突，继续保留为独立诊断，不混入首个 V8 提交。
 
 完整版本记录见 [VERSION_SCORE_LOG.md](VERSION_SCORE_LOG.md)，简历与面试表述见 [docs/RESUME_CASE_STUDY.md](docs/RESUME_CASE_STUDY.md)。
 
@@ -144,8 +150,8 @@ agent/
   evaluation/    # 开发门禁与保守融合
   llm/           # 百炼 OpenAI-compatible Qwen client
   io/            # JSONL、提交文件和 Token 汇总
-scripts/         # 01-26 可复现流水线
-configs/         # V3-V7 分层复核配置
+scripts/         # 01-28 可复现流水线
+configs/         # V3-V8 分层复核配置
 devsets/         # 带题面指纹的开发集
 tests/           # 单元与集成回归
 theory/          # 论文调研和各版本技术笔记
@@ -275,6 +281,38 @@ python scripts\04_make_submission.py `
 `fc15_single_choice_collision` 只用于确认双真单选题的官方处理，不建议与
 `reg3_terminal_storage` 首次合并提交。候选说明见 [docs/V7_QUESTION_ENVELOPE.md](docs/V7_QUESTION_ENVELOPE.md)。
 
+## 生成 V8 候选
+
+```powershell
+python scripts\27_merge_v8_candidate.py `
+  --include-group ins8_explicit_coverage `
+  --output outputs\v8_ins8_candidate\answer_results.jsonl
+
+python scripts\04_make_submission.py `
+  --results outputs\v8_ins8_candidate\answer_results.jsonl `
+  --output-dir outputs\v8_ins8_candidate `
+  --require-complete
+```
+
+提交文件为 `outputs/v8_ins8_candidate/answer.csv`，唯一变化是
+`ins_a_008: ABC -> AC`。设计依据见 [docs/V8_EXPLICIT_ENTAILMENT.md](docs/V8_EXPLICIT_ENTAILMENT.md)。
+
+V8 同时提供选项级多运行共识审计：
+
+```powershell
+python scripts\28_audit_option_consensus.py `
+  --baseline outputs\releases\v7\answer_results.jsonl `
+  --candidate outputs\v6_full_candidate\answer_results.jsonl `
+  --candidate outputs\v6_exhaustive_audit\answer_results.jsonl `
+  --candidate outputs\v6_remaining_exhaustive\answer_results.jsonl `
+  --candidate outputs\v6_unchanged_exhaustive\answer_results.jsonl `
+  --min-runs 2 `
+  --output outputs\v8_option_consensus.json
+```
+
+该报告只列出待复核候选，不自动修改答案。现有九个一致翻转中，八个已被直接原文否决；
+只保留 `ins_a_008` 进入首个单变量提交。
+
 ## 协作约定
 
 - GitHub 只保留 `main`，功能开发使用短生命周期本地分支，合并后删除。
@@ -282,6 +320,6 @@ python scripts\04_make_submission.py `
 - 每次修改检索或压缩策略必须记录答案差异、Token 差异和直接证据。
 - 未经官网验证的结果只能称为 candidate，不写成官方准确率。
 
-## 下一目标：90 分
+## 下一目标：95 分
 
-V6 的 `326,076` Token 下，达到 90 分仍需要 `92/100`，预计约 `90.20` 分，即还差 7 题。下一步先提交 `reg_a_003` 单变量候选，再根据官网反馈决定是否纳入；`fc_a_015` 存在两个原文均为真的标注冲突，只作为独立诊断项。90 分是目标，不把未获得的榜单结果写成保证。
+当前约 33 万 Token 下，综合分达到 95 至少需要 `97/100`，即相对 V7 再净增 11 题。达到该门槛前，主线只接受可审计的证据、推理和发布门禁改进；跨模型、B 榜无 `doc_ids`、embedding 和跨语料重构记录在 [核心开发计划](docs/CORE_DEVELOPMENT_PLAN.md)，达到 95 后实施。

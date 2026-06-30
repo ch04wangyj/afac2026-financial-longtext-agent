@@ -3,11 +3,13 @@
 > 日期：2026-06-09  
 > 目标：把 GraphRAG、LogicRAG、LinearRAG、CRAG、LightRAG、HippoRAG、RAPTOR、KAG/OpenSPG、Self-RAG、IRCoT 等方向拆成“原框架能力”和“本赛题可落地版本”，并持续同步到代码 variants 与评估报告。
 >
-> 2026-06-29 更新：当前正式主线为 V5 的结构导航、文档实体绑定与逐选项真值组装，官网得分 `80.4466`。PageIndex/LongRefiner/BookRAG 只吸收层级导航和证据精炼思想；图构建、embedding、全题 PoT/Judge 不进入当前提交链。详见 `references/notes/2026-06-28_v5-structure-selected-truth.md`。
+> 2026-06-30 更新：当前正式基线为 V7 的结构导航、逐选项真值组装、题干范围门禁与人工审计发布链，官网得分 `84.3124`（推定 `86/100`）。V8 先验证否定/缺失声明的显式蕴含门禁；PageIndex、LongRefiner、BookRAG 只吸收层级导航和证据精炼思想，图构建、embedding、全题 PoT/Judge 暂不进入当前提交链。
 >
 > 2026-06-29 V6 更新：新增选项级证据契约、财务事实账本、受限计算和来源约束的跨题事实图。官网得分 `83.33`，对应 85/100。完整记录见 `docs/V6_EVIDENCE_CONTRACT.md`。
 >
 > 2026-06-29 V7 更新：V6 官网得分 `83.33`，对应 85/100。V7 引入题干范围契约，但全题启用导致 42 题漂移；现仅对 6 道显式集合归属题启用，并增加方法级消融与官网分数反推。详见 `docs/V7_QUESTION_ENVELOPE.md`。
+>
+> 当前优先级：V7 官网已达 `84.3124`（86/100）。先把当前赛题做到综合分 95，约需 97/100；达到后再实施跨模型、B 榜无 `doc_ids`、embedding 和跨语料通用化。接口方向保留在 `docs/CORE_DEVELOPMENT_PLAN.md`，但不提前替换正式主链。
 
 ---
 
