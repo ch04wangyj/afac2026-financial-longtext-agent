@@ -1,4 +1,4 @@
-"""脚本 33：枚举一次官网提交中增益题与回归题的可行组合。"""
+"""脚本 33：枚举一次官网提交中增益、回归和双错题的可行组合。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,9 @@ from agent.io.jsonl import read_jsonl
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="枚举候选提交的可行增益/回归模式。")
+    parser = argparse.ArgumentParser(
+        description="枚举候选提交的可行增益/回归/双错模式。"
+    )
     parser.add_argument(
         "--official-run",
         action="append",
@@ -47,35 +49,54 @@ def main() -> None:
     }
 
     change_count = len(changes)
-    numerator = change_count + args.score_delta
-    if numerator % 2:
-        raise ValueError("只考虑旧/新答案时，变化题数与净分差的奇偶性不兼容")
-    gain_count = numerator // 2
-    if not 0 <= gain_count <= change_count:
+    if not -change_count <= args.score_delta <= change_count:
         raise ValueError("净分差超出本次变化可能产生的范围")
 
-    feasible_patterns: list[tuple[str, ...]] = []
+    # 一道变化题可能出现三种结果：新答案命中、旧答案命中，或两者都未命中。
+    # “双错”状态必须显式排除旧、新答案，不能把它误当成零信息。
+    contribution = {"gain": 1, "loss": -1, "neutral": 0}
+    feasible_patterns: list[dict[str, tuple[str, ...]]] = []
     qids = tuple(changes)
-    for gains in itertools.combinations(qids, gain_count):
-        gain_set = set(gains)
+    for states in itertools.product(contribution, repeat=change_count):
+        if sum(contribution[state] for state in states) != args.score_delta:
+            continue
+        state_by_qid = dict(zip(qids, states))
         assignment = {
-            qid: new_answer if qid in gain_set else old_answer
-            for qid, (old_answer, new_answer) in changes.items()
+            qid: changes[qid][1 if state == "gain" else 0]
+            for qid, state in state_by_qid.items()
+            if state != "neutral"
+        }
+        forbidden = {
+            qid: set(changes[qid])
+            for qid, state in state_by_qid.items()
+            if state == "neutral"
         }
         if is_partial_assignment_feasible(
             runs,
             valid_answers_by_qid=valid_answers,
             partial_assignment=assignment,
+            forbidden_answers_by_qid=forbidden,
         ):
-            feasible_patterns.append(gains)
+            feasible_patterns.append(
+                {
+                    state: tuple(
+                        qid
+                        for qid in qids
+                        if state_by_qid[qid] == state
+                    )
+                    for state in contribution
+                }
+            )
 
     print(f"变化题数: {change_count}")
     print(f"净分差: {args.score_delta:+d}")
-    print(f"假设无第三答案时: {gain_count} 个增益，{change_count - gain_count} 个回归")
     print(f"可行模式: {len(feasible_patterns)}")
-    for index, gains in enumerate(feasible_patterns, start=1):
-        losses = [qid for qid in qids if qid not in set(gains)]
-        print(f"{index:02d}. 增益={','.join(gains)} | 回归={','.join(losses)}")
+    for index, pattern in enumerate(feasible_patterns, start=1):
+        print(
+            f"{index:02d}. 增益={','.join(pattern['gain']) or '-'} | "
+            f"回归={','.join(pattern['loss']) or '-'} | "
+            f"双错={','.join(pattern['neutral']) or '-'}"
+        )
 
 
 def _parse_run(value: str) -> LeaderboardRun:

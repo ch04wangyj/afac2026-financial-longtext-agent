@@ -41,7 +41,8 @@
 
 ## 官网反馈复盘
 
-- 六处变化中存在 4 个增益、2 个回归。
-- 不含旧 V15 重建运行时，共有 7 种四增二减模式满足全部可信官网运行。
-- 原文和连续版本净变化最支持撤销 `fc_a_012`、`fc_a_015`，保留另外四项。
-- 后续候选与工具见 [V10_CONDITIONED_CONSTRAINTS.md](V10_CONDITIONED_CONSTRAINTS.md)。
+- V9 六处变化净增 2，但不能据此推出四增二减。
+- V10 的奇数净分差证明至少存在一个旧、新答案都错的第三标签状态。
+- 二态推断已经作废，后续见
+  [V10_CONDITIONED_CONSTRAINTS.md](V10_CONDITIONED_CONSTRAINTS.md) 和
+  [V11_TERNARY_CONSTRAINTS.md](V11_TERNARY_CONSTRAINTS.md)。

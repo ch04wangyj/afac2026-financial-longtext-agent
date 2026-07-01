@@ -199,8 +199,9 @@ def is_partial_assignment_feasible(
     *,
     valid_answers_by_qid: dict[str, set[str]],
     partial_assignment: dict[str, str],
+    forbidden_answers_by_qid: dict[str, set[str]] | None = None,
 ) -> bool:
-    """判断一组候选标签能否同时满足全部官网正确题数约束。"""
+    """判断固定标签与排除标签能否同时满足全部官网正确题数约束。"""
     qids = _validate_runs(runs)
     states_by_qid: dict[str, tuple[str, ...]] = {}
     for qid in qids:
@@ -218,7 +219,16 @@ def is_partial_assignment_feasible(
         states_by_qid=states_by_qid,
         model=model,
     )
-    return model.solve(forced_variables=forced_variables)
+    forbidden_variables = _validate_forbidden_answers(
+        forbidden_answers_by_qid or {},
+        qids=qids,
+        states_by_qid=states_by_qid,
+        model=model,
+    )
+    return model.solve(
+        forced_variables=forced_variables,
+        forbidden_variables=forbidden_variables,
+    )
 
 
 def infer_question_constraints(
@@ -328,6 +338,29 @@ def _validate_partial_assignment(
     return forced_variables
 
 
+def _validate_forbidden_answers(
+    forbidden_answers_by_qid: dict[str, set[str]],
+    *,
+    qids: list[str],
+    states_by_qid: dict[str, tuple[str, ...]],
+    model: "_MilpModel",
+) -> list[int]:
+    """校验排除标签并转换为需要固定为 0 的 MILP 变量。"""
+    unknown = sorted(set(forbidden_answers_by_qid) - set(qids))
+    if unknown:
+        raise KeyError(f"排除条件包含未知题目: {unknown}")
+    forbidden_variables: list[int] = []
+    for qid, answers in forbidden_answers_by_qid.items():
+        invalid = sorted(set(answers) - set(states_by_qid[qid]))
+        if invalid:
+            raise ValueError(f"题目 {qid} 包含非法排除答案: {invalid}")
+        forbidden_variables.extend(
+            model.variable_by_state[(qid, answer)]
+            for answer in sorted(set(answers))
+        )
+    return forbidden_variables
+
+
 class _MilpModel:
     """对 SciPy MILP 的最小封装，便于重复执行单变量可行性检查。"""
 
@@ -352,11 +385,13 @@ class _MilpModel:
         self,
         forced_variable: int | None = None,
         forced_variables: list[int] | None = None,
+        forbidden_variables: list[int] | None = None,
     ) -> bool:
         """判断模型是否可行；可选地强制一个或多个题目状态取 1。"""
         return self.optimize(
             forced_variable=forced_variable,
             forced_variables=forced_variables,
+            forbidden_variables=forbidden_variables,
         ) is not None
 
     def optimize(
@@ -365,6 +400,7 @@ class _MilpModel:
         objective=None,
         forced_variable: int | None = None,
         forced_variables: list[int] | None = None,
+        forbidden_variables: list[int] | None = None,
     ):
         """执行一次整数优化并返回变量解；不可行时返回 ``None``。"""
         import numpy as np
@@ -375,9 +411,14 @@ class _MilpModel:
         selected_variables = list(forced_variables or [])
         if forced_variable is not None:
             selected_variables.append(forced_variable)
+        forbidden_set = set(forbidden_variables or [])
+        if forbidden_set.intersection(selected_variables):
+            return None
         for variable in selected_variables:
             lower[variable] = 1.0
             upper[variable] = 1.0
+        for variable in forbidden_set:
+            upper[variable] = 0.0
         result = milp(
             c=self.objective if objective is None else objective,
             integrality=self.integrality,

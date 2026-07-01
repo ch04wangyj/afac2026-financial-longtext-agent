@@ -100,6 +100,41 @@ def test_partial_assignment_checks_joint_feasibility():
     )
 
 
+def test_forbidden_answers_can_express_old_and_new_both_wrong():
+    runs = [
+        LeaderboardRun(
+            name="base",
+            answers={"q1": "A", "q2": "A"},
+            correct_count=1,
+        ),
+        LeaderboardRun(
+            name="candidate",
+            answers={"q1": "B", "q2": "A"},
+            correct_count=1,
+        ),
+    ]
+    valid = {"q1": {"A", "B", "C"}, "q2": {"A", "B", "C"}}
+
+    assert is_partial_assignment_feasible(
+        runs,
+        valid_answers_by_qid=valid,
+        partial_assignment={},
+        forbidden_answers_by_qid={"q1": {"A", "B"}},
+    )
+    assert not is_partial_assignment_feasible(
+        runs,
+        valid_answers_by_qid={"q1": {"A", "B"}, "q2": {"A", "B"}},
+        partial_assignment={},
+        forbidden_answers_by_qid={"q1": {"A", "B"}},
+    )
+    assert not is_partial_assignment_feasible(
+        runs,
+        valid_answers_by_qid=valid,
+        partial_assignment={"q1": "A"},
+        forbidden_answers_by_qid={"q1": {"A"}},
+    )
+
+
 def test_conditioned_constraints_protect_additional_baseline_answer():
     runs = [
         LeaderboardRun(

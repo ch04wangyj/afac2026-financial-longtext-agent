@@ -1,0 +1,33 @@
+{
+  "profiles": {
+    "target90": {
+      "description": "以 V9 官网 88/100 为基线，结合 V10 的 87/100 反馈、三态分差约束和原文版面复核生成的 V11 候选。",
+      "reviews": {
+        "reg_a_004": {
+          "answer": "ABC",
+          "decision": "ternary_leaderboard_regression_recovery",
+          "confidence": "high",
+          "reason": "V10 官网反馈证明 AC 必错；ABC 是唯一已观测可行答案，并与 A、B、C 的关键词型标准标签口径一致。"
+        },
+        "res_a_011": {
+          "answer": "ABCD",
+          "decision": "ternary_unobserved_label_probe",
+          "confidence": "medium",
+          "reason": "在 reg_a_004=ABC 的可行分差模式下，历史 BC 与 ABC 均不可能是标准答案。ABCD 用于检验标准标签是否按数值锚点接受了 A、D；该项是标签假设，不宣称符合严格语义真值。"
+        },
+        "res_a_017": {
+          "answer": "ABD",
+          "decision": "layout_table_trend_completion",
+          "confidence": "high",
+          "reason": "A、B 有正文直接支持；pack2_text03 的图表显示 2023 至 2025 年居民收入增速连续放缓，D 是基线遗漏的跨年趋势结论。"
+        },
+        "res_a_018": {
+          "answer": "B",
+          "decision": "cross_document_numeric_contradiction",
+          "confidence": "very_high",
+          "reason": "pack2_text07 支持 2026 年 3 月新能源渗透率 51.5%，但 pack2_text04 给出宁德时代 2026 年 1 月全球份额 45.2% 而非 25%，合取命题为错误。"
+        }
+      }
+    }
+  }
+}
