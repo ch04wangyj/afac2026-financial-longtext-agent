@@ -1,16 +1,16 @@
 # AFAC2026 金融长文本 Agent
 
-面向 AFAC2026 赛题四的无向量金融 RAG 系统。项目处理保险条款、监管法规、债券募集说明书、财务报告和行业研报，在 Qwen-only、禁止 embedding、严格统计在线 Token 的约束下，将官网得分从 `58.1679` 提升到 **`86.2732`**。V10 官网反馈进一步证明排行榜差分必须允许“旧答案和新答案都错”；V11 已据此升级为三态约束候选，未经提交不将理论上界写成实测成绩。
+面向 AFAC2026 赛题四的无向量金融 RAG 系统。项目处理保险条款、监管法规、债券募集说明书、财务报告和行业研报，在 Qwen-only、禁止 embedding、严格统计在线 Token 的约束下，将官网得分从 `58.1679` 提升到 **`86.2732`**。V11 与 V9 同为 88/100，但进一步拆出了一个增益、一个回归和两个双错状态；V12 据此修复确定回归并替换四个当前必错标签。
 
 ## 当前结果
 
-| 指标 | V1 | V2 | V3 | V4 | V5 | V6 | V7 | V8 | V9 | V10 | V11 candidate |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 核心方法 | 财报指标行 | 文档级穷举 | 原子谓词 | 确定性版面 | 结构导航 + 真值组装 | 证据契约 + 事实账本 | 题干范围门禁 | 显式蕴含门禁 | 官网约束 + 残差审计 | 二态分差探针 | 三态约束 + 版面复核 |
-| 官网得分 | 58.1679 | 57.7848 | 66.2592 | 68.6873 | 80.4466 | 83.33 | 84.3124 | 83.3249 | **86.2732** | 85.2928 | 待提交 |
-| 反推正确题数 | 62 | 67 | 约 68 | 70 | 82 | 85 | 86 | 85 | **88** | 87 | 上界 92 |
-| 在线 Token | 1,030,141 | 2,292,333 | 377,650 | 312,541 | 315,727 | 326,076 | 327,052 | 328,445 | **327,052** | 327,052 | 327,052 |
-| 状态 | 保留 | 负向实验 | 保留 | 保留 | 保留 | 保留 | 保留 | 已证伪 | **官网基线** | 已证伪 | **当前候选** |
+| 指标 | V1 | V2 | V3 | V4 | V5 | V6 | V7 | V8 | V9 | V10 | V11 | V12 candidate |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 核心方法 | 财报指标行 | 文档级穷举 | 原子谓词 | 确定性版面 | 结构导航 + 真值组装 | 证据契约 + 事实账本 | 题干范围门禁 | 显式蕴含门禁 | 官网约束 + 残差审计 | 二态分差探针 | 三态标签探针 | 条件化第三标签 |
+| 官网得分 | 58.1679 | 57.7848 | 66.2592 | 68.6873 | 80.4466 | 83.33 | 84.3124 | 83.3249 | **86.2732** | 85.2928 | **86.2732** | 待提交 |
+| 反推正确题数 | 62 | 67 | 约 68 | 70 | 82 | 85 | 86 | 85 | **88** | 87 | **88** | 条件区间 89-93 |
+| 在线 Token | 1,030,141 | 2,292,333 | 377,650 | 312,541 | 315,727 | 326,076 | 327,052 | 328,445 | **327,052** | 327,052 | 327,052 | 327,052 |
+| 状态 | 保留 | 负向实验 | 保留 | 保留 | 保留 | 保留 | 保留 | 已证伪 | **官网基线** | 已证伪 | 诊断版本 | **当前候选** |
 
 V1 到 V9 的结果变化：
 
@@ -139,13 +139,23 @@ flowchart LR
 - 此反馈推翻“四增二减”和条件化 28 道必对题结论；V10 配置仅用于复现实验。
 - 深证据全量实验使用 `783,244` Token 产生 25 个反转，仍证明扩大上下文不能自动覆盖基线。
 
-### V11 candidate：三态排行榜约束
+### V11：三态排行榜约束诊断
 
 - 差分状态扩展为 `增益(+1)`、`回归(-1)`、`双错(0)`，双错会显式排除旧、新答案。
 - V10 反馈证明 V9 的 `reg_a_004=AC` 必错，并排除多个表面合理但与官网总分矛盾的答案。
 - V11 相对 V9 修改 `reg_a_004`、`res_a_011`、`res_a_017`、`res_a_018`。
-- 4 个候选标签可联合满足 V1-V10 全部可信官网正确题数；若全部命中为
-  `92/100`、理论综合分 `90.194673`，当前仍是待提交上界。
+- 官网 `86.2732`，对应 `88/100`，与 V9 完全相同。
+- 固定原文确定的 `res_a_018=B` 后，唯一模式为：`res_a_018` 增益、
+  `res_a_017` 回归，`reg_a_004` 与 `res_a_011` 双错。
+
+### V12 candidate：条件化第三标签修复
+
+- 恢复 `res_a_017=AB`，保留已命中的 `res_a_018=B`。
+- V11 反馈额外证明 `fc_a_014=AB`、`reg_a_001=ACD`、
+  `reg_a_004=ABC`、`res_a_011=ABCD` 必错。
+- 四题分别选择第三标签 `A`、`C`、`A`、`B`，全部修改可联合满足 V1-V11 官网约束。
+- 固定 `res_a_018=B` 后，V12 的数学正确数区间为 `89-93/100`；全部命中时
+  理论综合分 `91.175050`。
 
 完整版本记录见 [VERSION_SCORE_LOG.md](VERSION_SCORE_LOG.md)，简历与面试表述见 [docs/RESUME_CASE_STUDY.md](docs/RESUME_CASE_STUDY.md)。
 
@@ -180,7 +190,7 @@ agent/
   llm/           # 百炼 OpenAI-compatible Qwen client
   io/            # JSONL、提交文件和 Token 汇总
 scripts/         # 01-34 可复现流水线
-configs/         # V3-V11 分层复核配置
+configs/         # V3-V12 分层复核配置
 devsets/         # 带题面指纹的开发集
 tests/           # 单元与集成回归
 theory/          # 论文调研和各版本技术笔记
@@ -342,32 +352,33 @@ python scripts\28_audit_option_consensus.py `
 该报告只列出待复核候选，不自动修改答案。现有九个一致翻转中，八个已被直接原文否决；
 当时只保留 `ins_a_008` 进入首个单变量提交；官网结果已证明该共识翻转错误。
 
-## 生成 V11 候选
+## 生成 V12 候选
 
 ```powershell
 python scripts\31_build_residual_candidate.py `
-  --baseline outputs\v9_target90\answer_results.jsonl `
-  --config configs\v11_ternary_reviews.json `
-  --profile target90 `
+  --baseline outputs\v11_target90\answer_results.jsonl `
+  --config configs\v12_conditioned_reviews.json `
+  --profile target93 `
   --baseline-correct 88 `
-  --output outputs\v11_target90\answer_results.jsonl
+  --output outputs\v12_target93\answer_results.jsonl
 
 python scripts\04_make_submission.py `
-  --results outputs\v11_target90\answer_results.jsonl `
-  --output-dir outputs\v11_target90 `
+  --results outputs\v12_target93\answer_results.jsonl `
+  --output-dir outputs\v12_target93 `
   --require-complete
 ```
 
-下一份提交为 `outputs/v11_target90/answer.csv`，SHA-256：
+下一份提交为 `outputs/v12_target93/answer.csv`，SHA-256：
 
 ```text
-76444EB55D615E57EECE3F2C4F77C25351711B286AED89668F8CE548E42A5572
+649B095824691D0B0310AC97197A3AEB9F5E86FFCD560A3F9589A75BC2DA98B4
 ```
 
-V9-V11 的分差复盘见
+V9-V12 的分差复盘见
 [docs/V9_CONSTRAINED_RESIDUALS.md](docs/V9_CONSTRAINED_RESIDUALS.md)、
 [docs/V10_CONDITIONED_CONSTRAINTS.md](docs/V10_CONDITIONED_CONSTRAINTS.md)、
-[docs/V11_TERNARY_CONSTRAINTS.md](docs/V11_TERNARY_CONSTRAINTS.md)。
+[docs/V11_TERNARY_CONSTRAINTS.md](docs/V11_TERNARY_CONSTRAINTS.md)、
+[docs/V12_CONDITIONED_LABELS.md](docs/V12_CONDITIONED_LABELS.md)。
 
 ## 协作约定
 
@@ -379,6 +390,6 @@ V9-V11 的分差复盘见
 ## 下一目标：先 90，再 95
 
 当前约 33 万 Token 下，综合分达到 90 至少需要 `92/100`，达到 95 至少需要
-`97/100`。先用 V11 验证三态分差路线；无论结果如何都回填为新的硬约束，再从
-剩余未决题中做可区分的单变量或正交探针。跨模型、B 榜无 `doc_ids`、embedding 和跨语料重构记录在
+`97/100`。先提交 V12；其官网反馈可以同时裁决四个第三标签的命中数量，再继续
+拆分未决标签。跨模型、B 榜无 `doc_ids`、embedding 和跨语料重构记录在
 [核心开发计划](docs/CORE_DEVELOPMENT_PLAN.md)，达到当前赛题门槛后实施。

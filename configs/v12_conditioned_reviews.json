@@ -1,0 +1,45 @@
+{
+  "profiles": {
+    "target93": {
+      "description": "以 V11 官网 88/100 为基线，在 res_a_018=B 的原文硬条件下修复一个确定回归，并为四个当前必错题选择第三标签。",
+      "reviews": {
+        "fc_a_014": {
+          "answer": "A",
+          "decision": "conditioned_unobserved_label",
+          "confidence": "medium_high",
+          "reason": "V11 条件化约束证明历史 B、AB 均不可能是标准答案；A 有 text03 第175页本金和利息乘150%的直接条款支持。"
+        },
+        "reg_a_001": {
+          "answer": "C",
+          "decision": "conditioned_unobserved_label",
+          "confidence": "medium_high",
+          "reason": "历史 ACD、CD 均被官网约束排除；C 由受益所有人办法第三十九条直接支持，A 省略重大差异的必要条件，B 与第三十条相反。"
+        },
+        "reg_a_004": {
+          "answer": "A",
+          "decision": "conditioned_unobserved_label",
+          "confidence": "high",
+          "reason": "历史 AB、ABC、AC 均被官网约束排除；A 有银行卡清算机构管理办法第二十六条直接支持，B、C 省略或改变必要范围，D 与两年完成全部客户的条款相反。"
+        },
+        "res_a_011": {
+          "answer": "B",
+          "decision": "conditioned_unobserved_label_probe",
+          "confidence": "medium",
+          "reason": "历史 BC、ABC、ABCD 均被官网约束排除。B 是不依赖省略词或指代关系的独立直接事实；该题仍存在隐藏标签冲突。"
+        },
+        "res_a_017": {
+          "answer": "AB",
+          "decision": "leaderboard_forced_regression_recovery",
+          "confidence": "verified",
+          "reason": "固定 res_a_018=B 后，V11 的 ABD 被官网分差证明为回归，AB 是唯一可行已观测答案。"
+        },
+        "res_a_018": {
+          "answer": "B",
+          "decision": "cross_document_numeric_contradiction",
+          "confidence": "very_high",
+          "reason": "2026年3月新能源渗透率为51.5%，但宁德时代2026年1月全球份额为45.2%而非25%，合取命题错误。"
+        }
+      }
+    }
+  }
+}
