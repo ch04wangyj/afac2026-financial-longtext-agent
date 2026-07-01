@@ -1,5 +1,10 @@
+from types import SimpleNamespace
+
+import numpy as np
+
 from agent.evaluation.leaderboard_constraints import (
     LeaderboardRun,
+    _build_model,
     infer_correctness_bounds,
     infer_question_constraints,
     infer_weighted_assignment,
@@ -225,3 +230,31 @@ def test_correctness_bounds_support_question_subsets():
     }
     assert conditioned.min_correct == 2
     assert conditioned.max_correct == 2
+
+
+def test_milp_rejects_presolve_solution_that_violates_original_constraints(
+    monkeypatch,
+):
+    """求解器不能把 HiGHS presolve 的伪可行解当成排行榜结论。"""
+    runs = [
+        LeaderboardRun(name="base", answers={"q1": "A"}, correct_count=1),
+    ]
+    model = _build_model(
+        runs,
+        ["q1"],
+        {"q1": ("A", "B")},
+    )
+    calls: list[bool] = []
+
+    def fake_milp(*, options, **_kwargs):
+        calls.append(options["presolve"])
+        if options["presolve"]:
+            # q1=B 违反 base 必须命中 1 题的等式约束。
+            return SimpleNamespace(success=True, x=np.array([0.0, 1.0]))
+        return SimpleNamespace(success=False, x=None)
+
+    monkeypatch.setattr("scipy.optimize.milp", fake_milp)
+
+    answer_b = model.variable_by_state[("q1", "B")]
+    assert model.optimize(forced_variable=answer_b) is None
+    assert calls == [True, False]

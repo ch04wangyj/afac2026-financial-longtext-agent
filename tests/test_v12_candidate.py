@@ -7,7 +7,7 @@ from agent.evaluation.residual_profiles import resolve_profile_reviews
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_v12_target93_profile_contains_conditioned_repairs():
+def test_v12_rejected_profile_is_retained_for_reproduction():
     payload = json.loads(
         (ROOT / "configs" / "v12_conditioned_reviews.json").read_text(
             encoding="utf-8"
@@ -16,6 +16,7 @@ def test_v12_target93_profile_contains_conditioned_repairs():
 
     reviews = resolve_profile_reviews(payload["profiles"], "target93")
 
+    assert payload["profiles"]["target93"]["description"].startswith("历史负向实验")
     assert {qid: row["answer"] for qid, row in reviews.items()} == {
         "fc_a_014": "A",
         "reg_a_001": "C",

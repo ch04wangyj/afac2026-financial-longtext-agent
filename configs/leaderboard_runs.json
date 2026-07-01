@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "purpose": "只允许官网分数与本地答案快照一一对应的运行进入隐藏标签硬约束。",
+  "runs": [
+    {
+      "name": "v1",
+      "status": "legacy_unverified",
+      "usable_for_constraints": false,
+      "result_path": "outputs/releases/v1/answer_results.jsonl",
+      "correct_count": 62,
+      "total_tokens": 1030141,
+      "official_score": 58.1679,
+      "sha256": "afe1a9bbdc61e1a7e76297bea81562773580f52b15bfc85162878adfc7b4582d",
+      "note": "本地快照与后续可信运行联合时不可行，不能确认其与官网提交逐题一致。"
+    },
+    {
+      "name": "v2",
+      "status": "legacy_unverified",
+      "usable_for_constraints": false,
+      "result_path": "outputs/releases/v2/answer_results.jsonl",
+      "correct_count": 67,
+      "total_tokens": 2292333,
+      "official_score": 57.7848,
+      "sha256": "e07bed6726a6b83114aff81e1e900ce50dfb8150e936d9c3a89f8d5960da7f58",
+      "note": "本地快照与后续可信运行联合时不可行，不能确认其与官网提交逐题一致。"
+    },
+    {
+      "name": "v3",
+      "status": "legacy_unverified",
+      "usable_for_constraints": false,
+      "result_path": "outputs/releases/v3/answer_results.jsonl",
+      "correct_count": null,
+      "total_tokens": 377650,
+      "official_score": 66.2592,
+      "sha256": "4be1288a816882e5aa1eb095b660e1ab021136fa2541d2079e03aadd66fb3f39",
+      "note": "本地 Token 无法按官网公式精确解释显示分，暂不进入硬约束。"
+    },
+    {
+      "name": "v4",
+      "status": "verified_submission",
+      "usable_for_constraints": true,
+      "result_path": "evaluation_data/leaderboard/v4_v12_answers.csv",
+      "answer_column": "v4",
+      "correct_count": 70,
+      "total_tokens": 312541,
+      "official_score": 68.6873,
+      "sha256": "015903b3b8937fce166ea01964422c7b1750dfb7aaf7d3cdefad28a0cc0358b5"
+    },
+    {
+      "name": "v5",
+      "status": "verified_submission",
+      "usable_for_constraints": true,
+      "result_path": "evaluation_data/leaderboard/v4_v12_answers.csv",
+      "answer_column": "v5",
+      "correct_count": 82,
+      "total_tokens": 315727,
+      "official_score": 80.4466,
+      "sha256": "015903b3b8937fce166ea01964422c7b1750dfb7aaf7d3cdefad28a0cc0358b5"
+    },
+    {
+      "name": "v6",
+      "status": "verified_submission",
+      "usable_for_constraints": true,
+      "result_path": "evaluation_data/leaderboard/v4_v12_answers.csv",
+      "answer_column": "v6",
+      "correct_count": 85,
+      "total_tokens": 326076,
+      "official_score": 83.33,
+      "sha256": "015903b3b8937fce166ea01964422c7b1750dfb7aaf7d3cdefad28a0cc0358b5"
+    },
+    {
+      "name": "v7",
+      "status": "verified_submission",
+      "usable_for_constraints": true,
+      "result_path": "evaluation_data/leaderboard/v4_v12_answers.csv",
+      "answer_column": "v7",
+      "correct_count": 86,
+      "total_tokens": 327052,
+      "official_score": 84.3124,
+      "sha256": "015903b3b8937fce166ea01964422c7b1750dfb7aaf7d3cdefad28a0cc0358b5"
+    },
+    {
+      "name": "v8",
+      "status": "verified_submission",
+      "usable_for_constraints": true,
+      "result_path": "evaluation_data/leaderboard/v4_v12_answers.csv",
+      "answer_column": "v8",
+      "correct_count": 85,
+      "total_tokens": 328445,
+      "official_score": 83.3249,
+      "sha256": "015903b3b8937fce166ea01964422c7b1750dfb7aaf7d3cdefad28a0cc0358b5"
+    },
+    {
+      "name": "v9",
+      "status": "verified_submission",
+      "usable_for_constraints": true,
+      "result_path": "evaluation_data/leaderboard/v4_v12_answers.csv",
+      "answer_column": "v9",
+      "correct_count": 88,
+      "total_tokens": 327052,
+      "official_score": 86.2732,
+      "sha256": "015903b3b8937fce166ea01964422c7b1750dfb7aaf7d3cdefad28a0cc0358b5"
+    },
+    {
+      "name": "v10",
+      "status": "verified_submission",
+      "usable_for_constraints": true,
+      "result_path": "evaluation_data/leaderboard/v4_v12_answers.csv",
+      "answer_column": "v10",
+      "correct_count": 87,
+      "total_tokens": 327052,
+      "official_score": 85.2928,
+      "sha256": "015903b3b8937fce166ea01964422c7b1750dfb7aaf7d3cdefad28a0cc0358b5"
+    },
+    {
+      "name": "v11",
+      "status": "verified_submission",
+      "usable_for_constraints": true,
+      "result_path": "evaluation_data/leaderboard/v4_v12_answers.csv",
+      "answer_column": "v11",
+      "correct_count": 88,
+      "total_tokens": 327052,
+      "official_score": 86.2732,
+      "sha256": "015903b3b8937fce166ea01964422c7b1750dfb7aaf7d3cdefad28a0cc0358b5"
+    },
+    {
+      "name": "v12",
+      "status": "verified_submission",
+      "usable_for_constraints": true,
+      "result_path": "evaluation_data/leaderboard/v4_v12_answers.csv",
+      "answer_column": "v12",
+      "correct_count": 85,
+      "total_tokens": 327052,
+      "official_score": 83.332,
+      "sha256": "015903b3b8937fce166ea01964422c7b1750dfb7aaf7d3cdefad28a0cc0358b5",
+      "note": "V12 条件化标签假设已被官网结果证伪，仅作为负向实验保留。"
+    }
+  ]
+}

@@ -83,6 +83,25 @@ class CorrectnessBounds:
         }
 
 
+def are_runs_feasible(
+    runs: list[LeaderboardRun],
+    *,
+    valid_answers_by_qid: dict[str, set[str]],
+) -> bool:
+    """判断一组完整提交及其正确题数能否由同一套隐藏标签解释。"""
+    qids = _validate_runs(runs)
+    states_by_qid: dict[str, tuple[str, ...]] = {}
+    for qid in qids:
+        states = tuple(sorted(valid_answers_by_qid[qid]))
+        if not states:
+            raise ValueError(f"题目 {qid} 没有合法答案")
+        observed = {run.answers[qid] for run in runs}
+        if not observed <= set(states):
+            raise ValueError(f"题目 {qid} 的历史答案不在合法答案空间内")
+        states_by_qid[qid] = states
+    return _build_model(runs, qids, states_by_qid).solve()
+
+
 def infer_weighted_assignment(
     runs: list[LeaderboardRun],
     *,
@@ -402,7 +421,12 @@ class _MilpModel:
         forced_variables: list[int] | None = None,
         forbidden_variables: list[int] | None = None,
     ):
-        """执行一次整数优化并返回变量解；不可行时返回 ``None``。"""
+        """执行整数优化并返回经过约束复验的变量解。
+
+        SciPy 1.11 所带的 HiGHS 在少数“等式约束 + 固定整数变量”问题上，
+        可能让 presolve 返回违反原约束的伪最优解。因此快速求解后必须复验，
+        失败时关闭 presolve 重算，不能只相信 ``result.success``。
+        """
         import numpy as np
         from scipy.optimize import Bounds, milp
 
@@ -419,14 +443,50 @@ class _MilpModel:
             upper[variable] = 1.0
         for variable in forbidden_set:
             upper[variable] = 0.0
-        result = milp(
-            c=self.objective if objective is None else objective,
-            integrality=self.integrality,
-            bounds=Bounds(lower, upper),
-            constraints=self.constraints,
-            options={"presolve": True},
-        )
-        return result.x if result.success else None
+        bounds = Bounds(lower, upper)
+        selected_objective = self.objective if objective is None else objective
+        for presolve in (True, False):
+            result = milp(
+                c=selected_objective,
+                integrality=self.integrality,
+                bounds=bounds,
+                constraints=self.constraints,
+                options={"presolve": presolve},
+            )
+            if result.success and self._is_valid_solution(
+                result.x,
+                lower=lower,
+                upper=upper,
+            ):
+                return result.x
+        return None
+
+    def _is_valid_solution(
+        self,
+        solution,
+        *,
+        lower,
+        upper,
+        tolerance: float = 1e-6,
+    ) -> bool:
+        """复验边界、整数性和全部线性约束，拒绝 HiGHS 伪可行解。"""
+        import numpy as np
+
+        if solution is None or len(solution) != len(lower):
+            return False
+        if np.any(solution < lower - tolerance):
+            return False
+        if np.any(solution > upper + tolerance):
+            return False
+        integer_mask = np.asarray(self.integrality) != 0
+        if np.any(np.abs(solution[integer_mask] - np.rint(solution[integer_mask])) > tolerance):
+            return False
+        constraint_values = self.constraints.A @ solution
+        if np.any(constraint_values < self.constraints.lb - tolerance):
+            return False
+        if np.any(constraint_values > self.constraints.ub + tolerance):
+            return False
+        return True
 
 
 def _build_model(

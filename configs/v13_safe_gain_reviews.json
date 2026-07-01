@@ -1,0 +1,21 @@
+{
+  "profiles": {
+    "safe_gain": {
+      "description": "以 V9 的 88/100 为基线，仅替换被 V4-V12 可信总分约束证明必错、且新答案在全部可行模式中不构成回归的两题。",
+      "reviews": {
+        "reg_a_004": {
+          "answer": "ABC",
+          "decision": "leaderboard_no_downside_candidate",
+          "confidence": "constraint_verified",
+          "reason": "V9 的 AC 在可信 V4-V12 约束下不可行；ABC 在 V9→V11 的全部合法模式中为增益或双错，不会损失正确题。"
+        },
+        "res_a_011": {
+          "answer": "ABCD",
+          "decision": "leaderboard_no_downside_candidate",
+          "confidence": "constraint_verified",
+          "reason": "V9 的 ABC 在可信 V4-V12 约束下不可行；ABCD 在 V9→V11 的全部合法模式中为增益或双错，不会损失正确题。"
+        }
+      }
+    }
+  }
+}

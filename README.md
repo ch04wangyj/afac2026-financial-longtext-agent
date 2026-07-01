@@ -1,16 +1,16 @@
 # AFAC2026 金融长文本 Agent
 
-面向 AFAC2026 赛题四的无向量金融 RAG 系统。项目处理保险条款、监管法规、债券募集说明书、财务报告和行业研报，在 Qwen-only、禁止 embedding、严格统计在线 Token 的约束下，将官网得分从 `58.1679` 提升到 **`86.2732`**。V11 与 V9 同为 88/100，但进一步拆出了一个增益、一个回归和两个双错状态；V12 据此修复确定回归并替换四个当前必错标签。
+面向 AFAC2026 赛题四的无向量金融 RAG 系统。项目处理保险条款、监管法规、债券募集说明书、财务报告和行业研报，在 Qwen-only、禁止 embedding、严格统计在线 Token 的约束下，将官网得分从 `58.1679` 提升到 **`86.2732`**。V12 的激进条件标签覆盖降至 `83.3320`，本轮已修复排行榜约束求解器并撤销“原文语义等于比赛隐藏标签”的错误假设；V13 只保留两个数学上无下行风险的变化。
 
 ## 当前结果
 
-| 指标 | V1 | V2 | V3 | V4 | V5 | V6 | V7 | V8 | V9 | V10 | V11 | V12 candidate |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 核心方法 | 财报指标行 | 文档级穷举 | 原子谓词 | 确定性版面 | 结构导航 + 真值组装 | 证据契约 + 事实账本 | 题干范围门禁 | 显式蕴含门禁 | 官网约束 + 残差审计 | 二态分差探针 | 三态标签探针 | 条件化第三标签 |
-| 官网得分 | 58.1679 | 57.7848 | 66.2592 | 68.6873 | 80.4466 | 83.33 | 84.3124 | 83.3249 | **86.2732** | 85.2928 | **86.2732** | 待提交 |
-| 反推正确题数 | 62 | 67 | 约 68 | 70 | 82 | 85 | 86 | 85 | **88** | 87 | **88** | 条件区间 89-93 |
-| 在线 Token | 1,030,141 | 2,292,333 | 377,650 | 312,541 | 315,727 | 326,076 | 327,052 | 328,445 | **327,052** | 327,052 | 327,052 | 327,052 |
-| 状态 | 保留 | 负向实验 | 保留 | 保留 | 保留 | 保留 | 保留 | 已证伪 | **官网基线** | 已证伪 | 诊断版本 | **当前候选** |
+| 指标 | V1 | V2 | V3 | V4 | V5 | V6 | V7 | V8 | V9 | V10 | V11 | V12 | V13 candidate |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 核心方法 | 财报指标行 | 文档级穷举 | 原子谓词 | 确定性版面 | 结构导航 + 真值组装 | 证据契约 + 事实账本 | 题干范围门禁 | 显式蕴含门禁 | 官网约束 + 残差审计 | 二态分差探针 | 三态标签探针 | 条件标签覆盖 | 可信约束 + 无下行候选 |
+| 官网得分 | 58.1679 | 57.7848 | 66.2592 | 68.6873 | 80.4466 | 83.33 | 84.3124 | 83.3249 | **86.2732** | 85.2928 | **86.2732** | 83.3320 | 待提交 |
+| 反推正确题数 | 62 | 67 | 未确认 | 70 | 82 | 85 | 86 | 85 | **88** | 87 | **88** | 85 | 约束区间 88-90 |
+| 在线 Token | 1,030,141 | 2,292,333 | 377,650 | 312,541 | 315,727 | 326,076 | 327,052 | 328,445 | **327,052** | 327,052 | 327,052 | 327,052 | 327,052 |
+| 状态 | 历史 | 负向实验 | 历史未核验 | 保留 | 保留 | 保留 | 保留 | 已证伪 | **官网基线** | 已证伪 | 诊断版本 | **已证伪** | **当前候选** |
 
 V1 到 V9 的结果变化：
 
@@ -19,11 +19,11 @@ V1 到 V9 的结果变化：
 - 在线 Token 从 `1,030,141` 降到 `327,052`，减少约 `68.3%`。
 - V4 到 V5 只增加约 `1.0%` Token，净增 12 道正确题。
 
-已发布快照保存在本地 `outputs/releases/`，后续诊断运行保存在各版本输出目录。V7
-`answer.csv` 的 SHA-256 为：
+已发布快照保存在本地 `outputs/releases/`，后续诊断运行保存在各版本输出目录。当前
+V13 `answer.csv` 的 SHA-256 为：
 
 ```text
-490F4A3226702CEC346919D7C432B70B913FDDF018A481226DC070ED4C7D3287
+7390FD5F15555F2AC519305016AE61950203F8293E8C01FFCA3D07622386AC08
 ```
 
 ## 系统架构
@@ -49,8 +49,10 @@ flowchart LR
     G --> FL["数值事实账本 + 受限计算"]
     FL --> H
     H --> I["确定性答案组装"]
-    O["历次官网答案 + 正确题数"] --> LC["0-1 整数约束"]
+    O["可信提交快照 + SHA-256 + 正确题数"] --> LC["复验后的 0-1 整数约束"]
+    SE["原文语义 / 模型共识"] --> EL["证据层级隔离"]
     LC --> J
+    EL --> I
     I --> J["直接原文复核白名单"]
     J --> K["answer.csv + evidence.json + token_usage.json"]
 ```
@@ -145,17 +147,24 @@ flowchart LR
 - V10 反馈证明 V9 的 `reg_a_004=AC` 必错，并排除多个表面合理但与官网总分矛盾的答案。
 - V11 相对 V9 修改 `reg_a_004`、`res_a_011`、`res_a_017`、`res_a_018`。
 - 官网 `86.2732`，对应 `88/100`，与 V9 完全相同。
-- 固定原文确定的 `res_a_018=B` 后，唯一模式为：`res_a_018` 增益、
-  `res_a_017` 回归，`reg_a_004` 与 `res_a_011` 双错。
+- V11 当时把 `res_a_018=B` 的原文语义判断误当成隐藏标签条件，因此后续唯一模式
+  结论无效；该错误已由 V12 官网反馈证伪。
 
-### V12 candidate：条件化第三标签修复
+### V12：条件标签覆盖，已证伪
 
-- 恢复 `res_a_017=AB`，保留已命中的 `res_a_018=B`。
-- V11 反馈额外证明 `fc_a_014=AB`、`reg_a_001=ACD`、
-  `reg_a_004=ABC`、`res_a_011=ABCD` 必错。
-- 四题分别选择第三标签 `A`、`C`、`A`、`B`，全部修改可联合满足 V1-V11 官网约束。
-- 固定 `res_a_018=B` 后，V12 的数学正确数区间为 `89-93/100`；全部命中时
-  理论综合分 `91.175050`。
+- 相对 V11 修改 5 题，官网 `83.3320`，对应 `85/100`，净损失 3 题。
+- 失败原因不是单一召回问题，而是把原文语义真值越层固定为比赛隐藏标签，并在
+  V1/V2 非可信快照上执行硬约束。
+- 约束器还暴露出 SciPy 1.11/HiGHS `presolve` 在固定整数变量下可能返回违反原等式
+  的伪可行解；现已增加原约束残差复验和无 presolve 回退。
+
+### V13 candidate：可信历史上的无下行修正
+
+- 仅使用哈希匹配的 V4-V12 官网提交；V1-V3 因快照或 Token 无法核验而退出硬约束。
+- 以 V9 的 88/100 为基线，只修改 `reg_a_004: AC -> ABC` 和
+  `res_a_011: ABC -> ABCD`。
+- 两个旧答案在可信约束下均不可能命中；新答案只可能是增益或双错，因此候选正确数
+  严格为 `88/89/90`，不是已实测准确率。
 
 完整版本记录见 [VERSION_SCORE_LOG.md](VERSION_SCORE_LOG.md)，简历与面试表述见 [docs/RESUME_CASE_STUDY.md](docs/RESUME_CASE_STUDY.md)。
 
@@ -168,7 +177,10 @@ flowchart LR
 | SURE-RAG 式充分性聚合 | 部分采用 | 迁移 coverage/conflict/uncertainty 思想，以确定性证据契约实现 |
 | H-STAR 式表格混合推理 | 部分采用 | 先恢复列/行和口径，再由受限 DSL 执行数值比较 |
 | ChainRAG/FunnelRAG 式渐进检索 | 部分采用 | 只在缺失谓词或数值端点时补检索，不启用无限多轮 Agent |
-| 官网总分 0-1 整数约束 | 是 | 用完整提交和整数正确题数排除不可能标签，并执行联合可行性门禁 |
+| 可信官网总分 0-1 整数约束 | 是 | 快照状态、SHA-256、Token 和正确题数先注册；MILP 解必须复验原约束 |
+| TreeRAG / LongRefiner | 部分采用 | 吸收层级导航、父子块双向展开和查询驱动精炼，不引入其 embedding 依赖 |
+| TableRAG | 部分采用 | 财报子链保留完整表 schema，并用受限 DSL/后续 SQLite 执行，不再只线性化表格 |
+| RAG-Anything / MinerU / Docling | 解析器接口已预留 | 复杂页可按质量路由，当前不全量替换确定性 PyMuPDF 主路 |
 | GraphRAG / LightRAG | 否 | A 榜已有候选 `doc_ids`，问题多为局部条款和表格事实；全局图构建成本高且收益不确定 |
 | 全题 LogicRAG / PoT / LLM Judge | 否 | 实验中产生 52 题答案漂移，Token 从 31 万增至 63 万 |
 | 全题 30K 深证据上下文 | 否 | 783,244 Token 产生 25 个反转，多项违反官网强制正确约束 |
@@ -189,8 +201,9 @@ agent/
   evaluation/    # 开发门禁与保守融合
   llm/           # 百炼 OpenAI-compatible Qwen client
   io/            # JSONL、提交文件和 Token 汇总
-scripts/         # 01-34 可复现流水线
-configs/         # V3-V12 分层复核配置
+scripts/         # 01-35 可复现流水线
+configs/         # 分层复核配置与可信排行榜运行注册表
+evaluation_data/ # 可复现的紧凑官网答案快照，不含原始文档和证据
 devsets/         # 带题面指纹的开发集
 tests/           # 单元与集成回归
 theory/          # 论文调研和各版本技术笔记
@@ -352,33 +365,43 @@ python scripts\28_audit_option_consensus.py `
 该报告只列出待复核候选，不自动修改答案。现有九个一致翻转中，八个已被直接原文否决；
 当时只保留 `ins_a_008` 进入首个单变量提交；官网结果已证明该共识翻转错误。
 
-## 生成 V12 候选
+## 生成 V13 候选
+
+先校验本地提交快照哈希，并计算候选的全部可行正确题数：
 
 ```powershell
+python scripts\35_rank_active_probes.py `
+  --baseline v9 `
+  --alternative "reg_a_004=AC,ABC" `
+  --alternative "res_a_011=ABC,ABCD" `
+  --output outputs\audits\v13_probe_ranking.json
+
 python scripts\31_build_residual_candidate.py `
-  --baseline outputs\v11_target90\answer_results.jsonl `
-  --config configs\v12_conditioned_reviews.json `
-  --profile target93 `
+  --baseline outputs\v9_target90\answer_results.jsonl `
+  --config configs\v13_safe_gain_reviews.json `
+  --profile safe_gain `
   --baseline-correct 88 `
-  --output outputs\v12_target93\answer_results.jsonl
+  --output outputs\v13_safe_gain\answer_results.jsonl
 
 python scripts\04_make_submission.py `
-  --results outputs\v12_target93\answer_results.jsonl `
-  --output-dir outputs\v12_target93 `
+  --results outputs\v13_safe_gain\answer_results.jsonl `
+  --output-dir outputs\v13_safe_gain `
   --require-complete
 ```
 
-下一份提交为 `outputs/v12_target93/answer.csv`，SHA-256：
+下一份本地提交为 `outputs/v13_safe_gain/answer.csv`，Git 可共享镜像为
+[`submissions/v13_answer.csv`](submissions/v13_answer.csv)。本地产物 SHA-256：
 
 ```text
-649B095824691D0B0310AC97197A3AEB9F5E86FFCD560A3F9589A75BC2DA98B4
+7390FD5F15555F2AC519305016AE61950203F8293E8C01FFCA3D07622386AC08
 ```
 
 V9-V12 的分差复盘见
 [docs/V9_CONSTRAINED_RESIDUALS.md](docs/V9_CONSTRAINED_RESIDUALS.md)、
 [docs/V10_CONDITIONED_CONSTRAINTS.md](docs/V10_CONDITIONED_CONSTRAINTS.md)、
 [docs/V11_TERNARY_CONSTRAINTS.md](docs/V11_TERNARY_CONSTRAINTS.md)、
-[docs/V12_CONDITIONED_LABELS.md](docs/V12_CONDITIONED_LABELS.md)。
+[docs/V12_CONDITIONED_LABELS.md](docs/V12_CONDITIONED_LABELS.md)、
+[docs/V13_SAFE_GAIN_PROBE.md](docs/V13_SAFE_GAIN_PROBE.md)。
 
 ## 协作约定
 
@@ -390,6 +413,8 @@ V9-V12 的分差复盘见
 ## 下一目标：先 90，再 95
 
 当前约 33 万 Token 下，综合分达到 90 至少需要 `92/100`，达到 95 至少需要
-`97/100`。先提交 V12；其官网反馈可以同时裁决四个第三标签的命中数量，再继续
-拆分未决标签。跨模型、B 榜无 `doc_ids`、embedding 和跨语料重构记录在
+`97/100`。先提交 V13；其 `88/89/90` 三种结果可直接区分当前剩余模式。下一步
+不再批量猜隐藏标签，而是建立逐领域证据开发集，并对 TableRAG 式表 schema/执行、
+TreeRAG 式层级召回和复杂页解析器路由分别做可归因消融。跨模型、B 榜无
+`doc_ids`、embedding 和跨语料重构记录在
 [核心开发计划](docs/CORE_DEVELOPMENT_PLAN.md)，达到当前赛题门槛后实施。

@@ -15,6 +15,7 @@ from agent.evaluation.leaderboard_constraints import (
     LeaderboardRun,
     infer_question_constraints,
 )
+from agent.evaluation.leaderboard_registry import load_verified_leaderboard_runs
 from agent.config import Settings
 from agent.data.questions import load_questions
 from agent.io.jsonl import read_jsonl, write_json
@@ -22,12 +23,23 @@ from agent.io.jsonl import read_jsonl, write_json
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="执行官网多版本答案约束审计。")
-    parser.add_argument(
+    run_source = parser.add_mutually_exclusive_group(required=True)
+    run_source.add_argument(
         "--run",
         action="append",
-        required=True,
         metavar="名称:结果文件:正确题数",
         help="完整 answer_results.jsonl，可重复传入。",
+    )
+    run_source.add_argument(
+        "--registry",
+        type=Path,
+        help="排行榜运行注册表；只加载哈希匹配的 verified_submission。",
+    )
+    parser.add_argument(
+        "--registry-run",
+        action="append",
+        default=[],
+        help="使用注册表时限定运行名称；不传则使用全部可信运行。",
     )
     parser.add_argument("--baseline", required=True, help="作为当前基线的运行名称。")
     parser.add_argument(
@@ -35,12 +47,19 @@ def main() -> None:
         action="append",
         default=[],
         metavar="QID=ANSWER",
-        help="加入已由原文或分差模式确认的标签条件，可重复传入。",
+        help="仅加入官方逐题标签或数学唯一标签；禁止使用原文语义猜测。",
     )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
-    runs = [_parse_run(value) for value in args.run]
+    runs = (
+        load_verified_leaderboard_runs(
+            args.registry,
+            names=set(args.registry_run) or None,
+        )
+        if args.registry
+        else [_parse_run(value) for value in args.run]
+    )
     settings = Settings.from_env()
     questions = load_questions(settings.questions_root)
     valid_answers = {
